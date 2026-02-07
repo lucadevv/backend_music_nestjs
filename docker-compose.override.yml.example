@@ -1,0 +1,26 @@
+# Este archivo es para sobrescribir configuraciones en desarrollo local
+# Copia este archivo como docker-compose.override.yml para personalizar
+
+version: '3.8'
+
+services:
+  postgres:
+    ports:
+      - "5433:5432"  # Cambia el puerto si 5432 está ocupado
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: music_app
+
+  redis:
+    ports:
+      - "6380:6379"  # Cambia el puerto si 6379 está ocupado
+    command: redis-server --appendonly yes  # Sin password para desarrollo
+
+  app:
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      # Para desarrollo local, puedes usar localhost si prefieres
+      # DB_HOST: host.docker.internal
+      # REDIS_HOST: host.docker.internal
