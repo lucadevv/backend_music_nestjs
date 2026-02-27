@@ -32,6 +32,9 @@ export class Playlist {
   @Column({ type: 'varchar', length: 500, nullable: true })
   coverImage: string | null;
 
+  @Column({ type: 'varchar', length: 1000, nullable: true })
+  thumbnail: string | null;
+
   @Column({ type: 'uuid' })
   userId: string; // Creador de la playlist
 

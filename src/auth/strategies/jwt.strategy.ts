@@ -8,7 +8,7 @@ import { JwtPayload } from '../interfaces/jwt-payload.interface';
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly usersService: UsersService,
   ) {
     super({
@@ -30,6 +30,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: payload.sub,
       email: payload.email,
       role: payload.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatar: user.avatar,
+      provider: user.provider,
+      isEmailVerified: user.isEmailVerified,
+      createdAt: user.createdAt,
     };
   }
 }

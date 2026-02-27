@@ -60,7 +60,7 @@ export class AuthController {
     type: AuthResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas' })
-  async login(@CurrentUser() user: any, @Body() loginDto: LoginDto) {
+  async login(@CurrentUser() _user: unknown, @Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
 
@@ -136,18 +136,30 @@ export class AuthController {
     schema: {
       type: 'object',
       properties: {
-        userId: { type: 'string' },
+        id: { type: 'string' },
         email: { type: 'string' },
+        firstName: { type: 'string', nullable: true },
+        lastName: { type: 'string', nullable: true },
+        avatar: { type: 'string', nullable: true },
+        provider: { type: 'string' },
         role: { type: 'string' },
+        isEmailVerified: { type: 'boolean' },
+        createdAt: { type: 'string', format: 'date-time' },
       },
     },
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   async getProfile(@CurrentUser() user: any) {
     return {
-      userId: user.userId,
+      id: user.userId,
       email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      avatar: user.avatar ?? null,
+      provider: user.provider ?? 'email',
       role: user.role,
+      isEmailVerified: user.isEmailVerified ?? false,
+      createdAt: user.createdAt,
     };
   }
 }

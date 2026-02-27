@@ -12,8 +12,6 @@ import { FavoriteGenre } from './entities/favorite-genre.entity';
 import { Song } from '../music/entities/song.entity';
 import { Playlist } from '../music/entities/playlist.entity';
 import { Genre } from '../music/entities/genre.entity';
-import { MusicApiService } from '../music/services/music-api.service';
-import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class LibraryService {
@@ -30,110 +28,7 @@ export class LibraryService {
     private readonly playlistRepository: Repository<Playlist>,
     @InjectRepository(Genre)
     private readonly genreRepository: Repository<Genre>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    private readonly musicApiService: MusicApiService,
   ) {}
-
-  // Sincronización con servicio externo
-  private async syncSongFromExternal(videoId: string): Promise<Song> {
-    // Buscar si ya existe por videoId
-    let song = await this.songRepository.findOne({
-      where: { videoId },
-    });
-
-    if (song) {
-      return song;
-    }
-
-    // Intentar buscar la canción en el servicio externo
-    // Nota: El servicio externo no tiene endpoint directo por videoId,
-    // pero podemos intentar obtenerla desde búsqueda o cuando venga de una playlist
-    // Por ahora creamos una canción básica que se actualizará cuando tengamos más info
-    song = this.songRepository.create({
-      videoId,
-      title: `Song ${videoId}`, // Se actualizará cuando tengamos más información
-      artist: 'Unknown',
-    });
-
-    return this.songRepository.save(song);
-  }
-
-  // Actualizar canción con datos del servicio externo
-  private async updateSongFromExternal(
-    song: Song,
-    songData: { title: string; artist: string; duration?: number },
-  ): Promise<Song> {
-    await this.songRepository.update(song.id, {
-      title: songData.title,
-      artist: songData.artist,
-      duration: songData.duration || song.duration || 0,
-    });
-
-    return this.songRepository.findOne({ where: { id: song.id } }) as Promise<Song>;
-  }
-
-  private async syncPlaylistFromExternal(
-    externalPlaylistId: string,
-    userId: string,
-  ): Promise<Playlist> {
-    // Buscar si ya existe
-    let playlist = await this.playlistRepository.findOne({
-      where: { externalPlaylistId },
-    });
-
-    if (playlist) {
-      return playlist;
-    }
-
-    // Obtener datos del servicio externo
-    try {
-      const externalPlaylist = await this.musicApiService.getPlaylist(
-        externalPlaylistId,
-      );
-
-      // Crear playlist local
-      playlist = this.playlistRepository.create({
-        externalPlaylistId,
-        name: externalPlaylist.title,
-        description: externalPlaylist.description || null,
-        userId, // Usuario que la agregó a favoritos
-        isPublic: false,
-      });
-
-      playlist = await this.playlistRepository.save(playlist);
-
-      // Sincronizar canciones de la playlist
-      if (externalPlaylist.songs && externalPlaylist.songs.length > 0) {
-        const songs = await Promise.all(
-          externalPlaylist.songs.map((songData) =>
-            this.syncSongFromExternal(songData.videoId),
-          ),
-        );
-
-        // Actualizar canciones con datos completos
-        for (let i = 0; i < externalPlaylist.songs.length; i++) {
-          const songData = externalPlaylist.songs[i];
-          const song = songs[i];
-          await this.updateSongFromExternal(song, songData);
-        }
-
-        playlist.songs = songs;
-        await this.playlistRepository.save(playlist);
-      }
-
-      return playlist;
-    } catch (error) {
-      // Si falla, crear playlist básica
-      playlist = this.playlistRepository.create({
-        externalPlaylistId,
-        name: `Playlist ${externalPlaylistId}`,
-        userId,
-        isPublic: false,
-      });
-      return this.playlistRepository.save(playlist);
-    }
-  }
 
   private async syncGenreFromExternal(
     externalParams: string,
@@ -162,6 +57,7 @@ export class LibraryService {
     userId: string,
     songId?: string,
     videoId?: string,
+    metadata?: { title?: string; artist?: string; thumbnail?: string; duration?: number },
   ): Promise<FavoriteSong> {
     if (!songId && !videoId) {
       throw new BadRequestException('Either songId or videoId must be provided');
@@ -170,11 +66,33 @@ export class LibraryService {
     let song: Song | null = null;
 
     if (videoId) {
-      // Sincronizar desde servicio externo
-      song = await this.syncSongFromExternal(videoId);
-      songId = song.id;
+      // Buscar si ya existe por videoId
+      song = await this.songRepository.findOne({ where: { videoId } });
+
+      if (!song) {
+        // Crear canción con metadata proporcionada
+        song = this.songRepository.create({
+          videoId,
+          title: metadata?.title || `Song ${videoId}`,
+          artist: metadata?.artist || 'Unknown',
+          thumbnail: metadata?.thumbnail || null,
+          duration: metadata?.duration || 0,
+        });
+        song = await this.songRepository.save(song);
+      } else if (metadata && (metadata.title || metadata.artist || metadata.thumbnail || metadata.duration)) {
+        // Actualizar si tenemos mejor metadata
+        await this.songRepository.update(song.id, {
+          title: metadata.title || song.title,
+          artist: metadata.artist || song.artist,
+          thumbnail: metadata.thumbnail || song.thumbnail,
+          duration: metadata.duration || song.duration,
+        });
+        song = await this.songRepository.findOne({ where: { id: song.id } });
+      }
+      if (song) {
+        songId = song.id;
+      }
     } else if (songId) {
-      // Usar canción local existente
       song = await this.songRepository.findOne({ where: { id: songId } });
       if (!song) {
         throw new NotFoundException(`Song with ID ${songId} not found`);
@@ -206,10 +124,28 @@ export class LibraryService {
     }) as Promise<FavoriteSong>;
   }
 
-  async removeFavoriteSong(userId: string, songId: string): Promise<void> {
-    const favorite = await this.favoriteSongRepository.findOne({
-      where: { userId, songId },
+  async removeFavoriteSong(userId: string, songIdOrVideoId: string): Promise<void> {
+    let favorite: FavoriteSong | null = null;
+    let actualSongId: string | null = null;
+
+    // Primero, intentar encontrar la canción por videoId
+    const song = await this.songRepository.findOne({
+      where: { videoId: songIdOrVideoId },
     });
+
+    if (song) {
+      // Si encontramos la canción por videoId, buscar el favorito usando el songId (UUID)
+      actualSongId = song.id;
+      favorite = await this.favoriteSongRepository.findOne({
+        where: { userId, songId: actualSongId },
+      });
+    } else {
+      // Si no es un videoId, asumir que es un songId (UUID) y buscar directamente
+      favorite = await this.favoriteSongRepository.findOne({
+        where: { userId, songId: songIdOrVideoId },
+      });
+      actualSongId = songIdOrVideoId;
+    }
 
     if (!favorite) {
       throw new NotFoundException('Song is not in favorites');
@@ -218,7 +154,7 @@ export class LibraryService {
     await this.favoriteSongRepository.remove(favorite);
 
     // Decrementar contador de likes
-    await this.songRepository.decrement({ id: songId }, 'likeCount', 1);
+    await this.songRepository.decrement({ id: actualSongId }, 'likeCount', 1);
   }
 
   async getFavoriteSongs(
@@ -249,6 +185,7 @@ export class LibraryService {
     userId: string,
     playlistId?: string,
     externalPlaylistId?: string,
+    metadata?: { name?: string; thumbnail?: string; description?: string },
   ): Promise<FavoritePlaylist> {
     if (!playlistId && !externalPlaylistId) {
       throw new BadRequestException(
@@ -259,9 +196,37 @@ export class LibraryService {
     let playlist: Playlist | null = null;
 
     if (externalPlaylistId) {
-      // Sincronizar desde servicio externo
-      playlist = await this.syncPlaylistFromExternal(externalPlaylistId, userId);
-      playlistId = playlist.id;
+      // Buscar si ya existe por externalPlaylistId
+      playlist = await this.playlistRepository.findOne({
+        where: { externalPlaylistId },
+      });
+
+      if (playlist) {
+        // Si ya existe y tenemos metadata, actualizarla
+        if (metadata && (metadata.name || metadata.thumbnail || metadata.description)) {
+          await this.playlistRepository.update(playlist.id, {
+            name: metadata.name || playlist.name,
+            thumbnail: metadata.thumbnail || playlist.thumbnail,
+            description: metadata.description || playlist.description,
+          });
+          playlist = await this.playlistRepository.findOne({
+            where: { id: playlist.id },
+          });
+        }
+        playlistId = playlist!.id;
+      } else {
+        // Crear playlist con metadata proporcionada
+        playlist = this.playlistRepository.create({
+          externalPlaylistId,
+          name: metadata?.name || `Playlist ${externalPlaylistId}`,
+          thumbnail: metadata?.thumbnail || null,
+          description: metadata?.description || null,
+          userId,
+          isPublic: false,
+        });
+        playlist = await this.playlistRepository.save(playlist);
+        playlistId = playlist.id;
+      }
     } else if (playlistId) {
       // Usar playlist local existente
       playlist = await this.playlistRepository.findOne({
@@ -299,18 +264,36 @@ export class LibraryService {
 
   async removeFavoritePlaylist(
     userId: string,
-    playlistId: string,
+    playlistIdOrExternalId: string,
   ): Promise<void> {
-    const favorite = await this.favoritePlaylistRepository.findOne({
-      where: { userId, playlistId },
+    let favorite: FavoritePlaylist | null = null;
+    let actualPlaylistId: string | null = null;
+
+    // Primero, intentar encontrar la playlist por externalPlaylistId
+    const playlist = await this.playlistRepository.findOne({
+      where: { externalPlaylistId: playlistIdOrExternalId },
     });
+
+    if (playlist) {
+      // Si encontramos la playlist por externalPlaylistId, buscar el favorito usando el playlistId (UUID)
+      actualPlaylistId = playlist.id;
+      favorite = await this.favoritePlaylistRepository.findOne({
+        where: { userId, playlistId: actualPlaylistId },
+      });
+    } else {
+      // Si no es un externalPlaylistId, asumir que es un playlistId (UUID) y buscar directamente
+      favorite = await this.favoritePlaylistRepository.findOne({
+        where: { userId, playlistId: playlistIdOrExternalId },
+      });
+      actualPlaylistId = playlistIdOrExternalId;
+    }
 
     if (!favorite) {
       throw new NotFoundException('Playlist is not in favorites');
     }
 
     await this.favoritePlaylistRepository.remove(favorite);
-    await this.playlistRepository.decrement({ id: playlistId }, 'likeCount', 1);
+    await this.playlistRepository.decrement({ id: actualPlaylistId }, 'likeCount', 1);
   }
 
   async getFavoritePlaylists(

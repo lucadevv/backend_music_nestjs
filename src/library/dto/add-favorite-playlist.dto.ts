@@ -17,4 +17,28 @@ export class AddFavoritePlaylistDto {
   @IsOptional()
   @IsString()
   externalPlaylistId?: string; // playlistId del servicio externo
+
+  @ApiPropertyOptional({
+    description: 'Nombre de la playlist (metadata opcional)',
+    example: 'My Favorite Songs',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL del thumbnail de la playlist (metadata opcional)',
+    example: 'https://example.com/thumbnail.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  thumbnail?: string;
+
+  @ApiPropertyOptional({
+    description: 'Descripción de la playlist (metadata opcional)',
+    example: 'A collection of my favorite songs',
+  })
+  @IsOptional()
+  @IsString()
+  description?: string;
 }

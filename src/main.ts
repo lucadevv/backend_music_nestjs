@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,6 +13,21 @@ async function bootstrap() {
   const apiPrefix = configService.get<string>('app.apiPrefix');
 
   app.setGlobalPrefix(apiPrefix ?? '');
+
+  // Security headers with Helmet
+  app.use(helmet());
+
+  // CORS configuration
+  const corsOrigins = configService.get<string>('app.corsOrigins');
+  app.enableCors({
+    origin: corsOrigins?.split(',') || ['http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  // Global exception filter
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Validación global
   app.useGlobalPipes(

@@ -7,7 +7,7 @@ import { AuthService } from '../auth.service';
 @Injectable()
 export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly authService: AuthService,
   ) {
     const clientId = configService.get<string>('oauth.apple.clientId') || '';
@@ -28,28 +28,30 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
   }
 
   async validate(
-    accessToken: string,
-    refreshToken: string,
+    _accessToken: string,
+    _refreshToken: string,
     idToken: string,
-    profile: any,
+    profile: unknown,
     done: VerifyCallback,
-  ): Promise<any> {
+  ): Promise<void> {
     try {
       // Apple returns user info in idToken, parse it
       const decoded = JSON.parse(
         Buffer.from(idToken.split('.')[1], 'base64').toString(),
       );
 
+      const profileObj = profile as { name?: { firstName?: string; lastName?: string } };
+
       const appleProfile = {
         id: decoded.sub,
         email: decoded.email,
-        name: profile.name || decoded.name,
+        name: profileObj?.name || decoded.name,
       };
 
       const result = await this.authService.loginWithApple(appleProfile);
       done(null, result);
     } catch (error) {
-      done(error, undefined);
+      done(error as Error, undefined);
     }
   }
 }

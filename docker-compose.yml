@@ -1,4 +1,18 @@
+# Docker Compose - Backend Music NestJS
+# ======================================
+# Este archivo es para desarrollo individual del servicio.
+# Para levantar todo el monorepo, usar el docker-compose.yml de la raíz.
+#
+# Uso:
+#   docker-compose up -d                    # Solo bases de datos (PostgreSQL + Redis)
+#   docker-compose --profile app up -d      # Incluir NestJS en contenedor
+#   docker-compose --profile dev up -d      # Modo desarrollo con hot reload
+
 services:
+  # ============================================
+  # BASES DE DATOS
+  # ============================================
+
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
@@ -30,7 +44,7 @@ services:
           cpus: ${POSTGRES_CPU_RESERVATION:-0.5}
           memory: ${POSTGRES_MEMORY_RESERVATION:-256M}
 
-  # Redis Cache
+  # Redis Cache para NestJS
   redis:
     image: redis:${REDIS_VERSION:-7}-alpine
     container_name: ${REDIS_CONTAINER_NAME:-music_app_redis}
@@ -59,15 +73,19 @@ services:
           cpus: ${REDIS_CPU_RESERVATION:-0.25}
           memory: ${REDIS_MEMORY_RESERVATION:-128M}
 
-  # NestJS Application (opcional - para desarrollo)
-  # Usar: docker-compose --profile app up app
+  # ============================================
+  # APLICACIÓN NESTJS
+  # ============================================
+
+  # NestJS Application - Producción
+  # Usar: docker-compose --profile app up -d
   app:
     profiles:
       - app
     build:
       context: ${DOCKER_BUILD_CONTEXT:-.}
       dockerfile: ${DOCKERFILE:-Dockerfile}
-      target: ${DOCKER_BUILD_TARGET:-development}
+      target: ${DOCKER_BUILD_TARGET:-production}
     container_name: ${APP_CONTAINER_NAME:-music_app_backend}
     restart: ${APP_RESTART:-unless-stopped}
     depends_on:
@@ -76,7 +94,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3000}
       API_PREFIX: ${API_PREFIX:-api}
       # Database
@@ -92,6 +110,60 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_TTL: ${REDIS_TTL:-3600}
       REDIS_URL: ${REDIS_URL:-}
+      # YTMusic Service - IMPORTANTE: URL para comunicarse con FastAPI
+      YTMUSIC_SERVICE_URL: ${YTMUSIC_SERVICE_URL:-http://music_services:8000}
+      # JWT Authentication
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+    ports:
+      - "${PORT:-3000}:3000"
+    networks:
+      - music_app_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/$${API_PREFIX:-api}/health || exit 1"]
+      interval: ${APP_HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${APP_HEALTHCHECK_TIMEOUT:-10s}
+      retries: ${APP_HEALTHCHECK_RETRIES:-3}
+      start_period: ${APP_HEALTHCHECK_START_PERIOD:-40s}
+
+  # NestJS Application - Desarrollo con hot reload
+  # Usar: docker-compose --profile dev up -d
+  app_dev:
+    profiles:
+      - dev
+    build:
+      context: ${DOCKER_BUILD_CONTEXT:-.}
+      dockerfile: ${DOCKERFILE:-Dockerfile}
+      target: development
+    container_name: ${APP_CONTAINER_NAME:-music_app_backend_dev}
+    restart: ${APP_RESTART:-unless-stopped}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: ${PORT:-3000}
+      API_PREFIX: ${API_PREFIX:-api}
+      # Database
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-music_app}
+      DATABASE_URI: ${DATABASE_URI:-}
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_TTL: ${REDIS_TTL:-3600}
+      REDIS_URL: ${REDIS_URL:-}
+      # YTMusic Service
+      YTMUSIC_SERVICE_URL: ${YTMUSIC_SERVICE_URL:-http://localhost:8000}
+      # JWT Authentication
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
     ports:
       - "${PORT:-3000}:3000"
     volumes:
@@ -101,7 +173,7 @@ services:
     networks:
       - music_app_network
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/$${API_PREFIX}/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/$${API_PREFIX:-api}/health || exit 1"]
       interval: ${APP_HEALTHCHECK_INTERVAL:-30s}
       timeout: ${APP_HEALTHCHECK_TIMEOUT:-10s}
       retries: ${APP_HEALTHCHECK_RETRIES:-3}

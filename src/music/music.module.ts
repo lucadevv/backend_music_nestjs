@@ -1,6 +1,8 @@
-import { Module, forwardRef } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { HttpModule } from '@nestjs/axios';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Song } from './entities/song.entity';
 import { Playlist } from './entities/playlist.entity';
 import { Genre } from './entities/genre.entity';
@@ -9,23 +11,28 @@ import { MusicController } from './music.controller';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
 import { LibraryModule } from '../library/library.module';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Song, Playlist, Genre, RecentSearch]),
-    forwardRef(() => LibraryModule),
-    HttpModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        timeout: configService.get<number>('externalApi.musicServiceTimeout') || 30000,
-        maxRedirects: 5,
-      }),
-    }),
-  ],
-  controllers: [MusicController],
-  providers: [MusicApiService, RecentSearchService],
-  exports: [TypeOrmModule, MusicApiService, RecentSearchService],
+    imports: [
+        HttpModule.register({
+            timeout: 30000,
+            maxRedirects: 5,
+        }),
+        JwtModule.registerAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (configService: ConfigService) => ({
+                secret: configService.get<string>('jwt.secret') || 'default-secret',
+                signOptions: { 
+                    expiresIn: 3600 * 24 * 7, // 7 days in seconds
+                },
+            }),
+        }),
+        TypeOrmModule.forFeature([Song, Playlist, Genre, RecentSearch]),
+        LibraryModule,
+    ],
+    controllers: [MusicController],
+    providers: [MusicApiService, RecentSearchService],
+    exports: [MusicApiService, RecentSearchService],
 })
-export class MusicModule { }
+export class MusicModule {}

@@ -6,10 +6,10 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { User, AuthProvider } from '../users/entities/user.entity';
 import { RefreshToken } from '../common/entities/refresh-token.entity';
 import { UsersService } from '../users/users.service';
@@ -244,7 +244,7 @@ export class AuthService {
 
     private async createRefreshToken(userId: string): Promise<string> {
         const token = randomBytes(32).toString('hex');
-        const hashedToken = await bcrypt.hash(token, 10);
+        const tokenHash = this.hashToken(token);
 
         const expiresIn = this.configService.get<string>(
             'jwt.refreshTokenExpiresIn',
@@ -253,28 +253,27 @@ export class AuthService {
 
         await this.refreshTokenRepository.save({
             userId,
-            token: hashedToken,
+            tokenHash,
             expiresAt,
         });
 
         return token;
     }
 
+    private hashToken(token: string): string {
+        return createHash('sha256').update(token).digest('hex');
+    }
+
     private async findRefreshToken(token: string): Promise<RefreshToken | null> {
-        // Get all tokens that haven't expired
-        const tokens = await this.refreshTokenRepository
-            .createQueryBuilder('refreshToken')
-            .where('refreshToken.expiresAt > :now', { now: new Date() })
-            .getMany();
+        const tokenHash = this.hashToken(token);
 
-        for (const tokenRecord of tokens) {
-            const isValid = await bcrypt.compare(token, tokenRecord.token);
-            if (isValid) {
-                return tokenRecord;
-            }
-        }
-
-        return null;
+        return this.refreshTokenRepository.findOne({
+            where: {
+                tokenHash,
+                expiresAt: MoreThan(new Date()),
+            },
+            relations: ['user'],
+        });
     }
 
     private parseExpiresIn(expiresIn: string): number {

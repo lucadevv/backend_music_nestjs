@@ -4,10 +4,17 @@ import { Strategy, VerifyCallback } from 'passport-google-oauth20';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth.service';
 
+interface GoogleProfile {
+  id: string;
+  emails: Array<{ value: string; verified?: boolean }>;
+  name?: { givenName?: string; familyName?: string };
+  photos?: Array<{ value: string }>;
+}
+
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly authService: AuthService,
   ) {
     super({
@@ -19,16 +26,16 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   }
 
   async validate(
-    accessToken: string,
-    refreshToken: string,
-    profile: any,
+    _accessToken: string,
+    _refreshToken: string,
+    profile: GoogleProfile,
     done: VerifyCallback,
-  ): Promise<any> {
+  ): Promise<void> {
     try {
       const result = await this.authService.loginWithGoogle(profile);
       done(null, result);
     } catch (error) {
-      done(error, false);
+      done(error as Error, false);
     }
   }
 }

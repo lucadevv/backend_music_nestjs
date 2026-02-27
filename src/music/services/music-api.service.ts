@@ -88,6 +88,13 @@ export class MusicApiService {
     this.logger.log(`MusicApiService initialized with baseUrl: ${this.baseUrl}, timeout: ${this.timeout}ms`);
   }
 
+  /**
+   * Get the HttpService instance for direct API calls (e.g., streaming proxy)
+   */
+  getHttpService(): HttpService {
+    return this.httpService;
+  }
+
   private async request<T>(
     endpoint: string,
     config?: AxiosRequestConfig,
@@ -208,12 +215,15 @@ export class MusicApiService {
 
   async getStreamUrl(videoId: string): Promise<{
     streamUrl: string;
+    proxyUrl: string;
     title?: string;
     artist?: string;
     duration?: number;
     thumbnail?: string;
   }> {
-
+    // Usar cache de Python (Redis) - no bypass
+    // El cache de streaming URLs está en Python con TTL de 2 horas
+    // Esto reduce llamadas a YouTube y evita rate limiting
     const response = await this.request<{
       url: string;
       title?: string;
@@ -222,14 +232,73 @@ export class MusicApiService {
       thumbnail?: string;
     }>(`/stream/${videoId}`);
 
+    // Construir la URL del proxy usando la configuración
+    // APP_URL en .env se mapea a app.url en ConfigService
+    const appUrl = this.configService.get<string>('app.url') || 'http://localhost:3000';
+    const proxyBaseUrl = `${appUrl}/api`;
+    const proxyUrl = `${proxyBaseUrl}/music/stream-proxy/${videoId}`;
 
     return {
       streamUrl: response.url,
+      proxyUrl: proxyUrl,
       title: response.title,
       artist: response.artist,
       duration: response.duration,
       thumbnail: response.thumbnail,
     };
+  }
+
+  async getBatchStreamUrls(videoIds: string[]): Promise<{
+    results: Array<{
+      videoId: string;
+      url?: string;
+      title?: string;
+      artist?: string;
+      duration?: number;
+      thumbnail?: string;
+      cached?: boolean;
+      error?: string;
+    }>;
+    summary: {
+      total: number;
+      cached: number;
+      fetched: number;
+      failed: number;
+    };
+  }> {
+    // Usar el endpoint batch de FastAPI
+    const response = await this.request<{
+      results: Array<any>;
+      summary: any;
+    }>(`/stream/batch?video_ids=${videoIds.join(',')}&preload=false`, {
+      method: 'POST',
+    });
+
+    return {
+      results: response.results.map((r: any) => ({
+        videoId: r.videoId,
+        url: r.url,
+        title: r.title,
+        artist: r.artist,
+        duration: r.duration,
+        thumbnail: r.thumbnail,
+        cached: r.cached,
+        error: r.error,
+      })),
+      summary: response.summary,
+    };
+  }
+
+  async getStreamCacheStatus(videoId: string): Promise<{
+    cached: boolean;
+    expiresIn: number;
+  }> {
+    const response = await this.request<{
+      cached: boolean;
+      expiresIn: number;
+    }>(`/stream/${videoId}/status`);
+
+    return response;
   }
 
   async search(query: string, filter: string = 'songs'): Promise<SearchResponse> {

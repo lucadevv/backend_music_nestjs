@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsNumber, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AddFavoriteSongDto {
@@ -16,5 +16,40 @@ export class AddFavoriteSongDto {
   })
   @IsOptional()
   @IsString()
-  videoId?: string; // ID del servicio externo
+  videoId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Título de la canción',
+    example: 'Never Gonna Give You Up',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  title?: string;
+
+  @ApiPropertyOptional({
+    description: 'Nombre del artista',
+    example: 'Rick Astley',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  artist?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL del thumbnail',
+    example: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  thumbnail?: string;
+
+  @ApiPropertyOptional({
+    description: 'Duración en segundos',
+    example: 212,
+  })
+  @IsOptional()
+  @IsNumber()
+  duration?: number;
 }

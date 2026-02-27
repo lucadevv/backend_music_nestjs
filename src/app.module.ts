@@ -27,6 +27,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { MusicModule } from './music/music.module';
 import { LibraryModule } from './library/library.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -122,6 +123,7 @@ import { LibraryModule } from './library/library.module';
       FavoritePlaylist,
       FavoriteGenre,
     ]),
+    SharedModule,
     UsersModule,
     AuthModule,
     MusicModule,

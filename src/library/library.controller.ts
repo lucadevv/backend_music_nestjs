@@ -53,12 +53,21 @@ export class LibraryController {
       user.userId,
       dto.songId,
       dto.videoId,
+      dto.title || dto.artist || dto.thumbnail ? {
+        title: dto.title,
+        artist: dto.artist,
+        thumbnail: dto.thumbnail,
+        duration: dto.duration,
+      } : undefined,
     );
   }
 
   @Delete('songs/:songId')
-  @ApiOperation({ summary: 'Eliminar canción de favoritos' })
-  @ApiParam({ name: 'songId', description: 'ID de la canción' })
+  @ApiOperation({ 
+    summary: 'Eliminar canción de favoritos',
+    description: 'Puede usar el songId (UUID) o el videoId del servicio externo',
+  })
+  @ApiParam({ name: 'songId', description: 'ID de la canción (UUID) o videoId' })
   @ApiResponse({
     status: 200,
     description: 'Canción eliminada de favoritos exitosamente',
@@ -150,12 +159,20 @@ export class LibraryController {
       user.userId,
       dto.playlistId,
       dto.externalPlaylistId,
+      dto.name || dto.thumbnail || dto.description ? {
+        name: dto.name,
+        thumbnail: dto.thumbnail,
+        description: dto.description,
+      } : undefined,
     );
   }
 
   @Delete('playlists/:playlistId')
-  @ApiOperation({ summary: 'Eliminar playlist de favoritos' })
-  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiOperation({ 
+    summary: 'Eliminar playlist de favoritos',
+    description: 'Puede usar el playlistId (UUID) o el externalPlaylistId del servicio externo',
+  })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist (UUID) o externalPlaylistId' })
   @ApiResponse({
     status: 200,
     description: 'Playlist eliminada de favoritos exitosamente',

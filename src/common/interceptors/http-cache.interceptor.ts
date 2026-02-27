@@ -3,9 +3,11 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
-import { Observable, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, of, throwError } from 'rxjs';
+import { tap, catchError } from 'rxjs/operators';
 import type { Cache } from 'cache-manager';
 import { Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -21,6 +23,11 @@ export class HttpCacheInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const { method, url } = request;
 
+    // No cachear stream-proxy (siempre debe ser fresh)
+    if (url.includes('/stream-proxy')) {
+      return next.handle();
+    }
+
     // Solo cachear GET requests
     if (method !== 'GET') {
       return next.handle();
@@ -29,22 +36,61 @@ export class HttpCacheInterceptor implements NestInterceptor {
     // Generar clave de caché basada en URL y query params
     const cacheKey = this.getCacheKey(request);
     
-    // Intentar obtener del caché
+    // Intentar obtener del caché PRIMERO (siempre servir cache si existe)
     const cachedResponse = await this.cacheManager.get(cacheKey);
     
     if (cachedResponse) {
+      // Devolver cache inmediatamente, luego actualizar en background
+      // Esto da la sensación de instantáneo al usuario
+      this.refreshCacheInBackground(cacheKey, next, url);
       return of(cachedResponse);
     }
 
-    // Si no está en caché, ejecutar la petición y guardar resultado
+    // Si no está en caché, ejecutar la petición
     return next.handle().pipe(
       tap(async (response) => {
-        // TTL por defecto: 5 minutos para contenido general
-        // TTL más largo para contenido estático
         const ttl = this.getTtl(url);
         await this.cacheManager.set(cacheKey, response, ttl);
       }),
+      catchError((error) => {
+        // Si hay error, intentar servir cache aunque esté viejo
+        return this.handleCacheError(error);
+      }),
     );
+  }
+
+  private async refreshCacheInBackground(cacheKey: string, next: CallHandler, url: string) {
+    // Solo actualizar en background para contenido no crítico
+    if (!url.includes('/for-you') && !url.includes('/recently-listened')) {
+      const ttl = this.getTtl(url);
+      next.handle().pipe(
+        tap(async (response) => {
+          await this.cacheManager.set(cacheKey, response, ttl);
+        }),
+      ).subscribe({
+        error: () => {} // Silenciar errores de refresh
+      });
+    }
+  }
+
+  private handleCacheError(error: any): Observable<any> {
+    // Si es error 5xx (FastAPI/YouTube down), el frontend puede manejarlo
+    const status = error?.status || error?.response?.status;
+    
+    if (status >= 500) {
+      // Re-throw para que el controller maneje el error
+      // El frontend puede mostrar datos cacheados si los tiene
+      throw new HttpException(
+        { 
+          message: 'Service temporarily unavailable', 
+          cached: false,
+          error: error.message 
+        },
+        HttpStatus.BAD_GATEWAY
+      );
+    }
+    
+    return throwError(() => error);
   }
 
   private getCacheKey(request: any): string {
@@ -60,17 +106,27 @@ export class HttpCacheInterceptor implements NestInterceptor {
   }
 
   private getTtl(url: string): number {
-    // TTL más largo para contenido que cambia poco
+    // Contenido que casi nunca cambia - 2 horas
     if (url.includes('/explore') || url.includes('/categories') || url.includes('/genres')) {
-      return 1800; // 30 minutos
+      return 7200; // 2 horas
     }
     
-    // TTL más corto para contenido dinámico
+    // Playlists - 1 hora
+    if (url.includes('/playlists/')) {
+      return 3600;
+    }
+    
+    // Contenido personalizado - 5 minutos
     if (url.includes('/for-you') || url.includes('/recently-listened')) {
       return 300; // 5 minutos
     }
 
-    // TTL por defecto
-    return 600; // 10 minutos
+    // Búsquedas - 10 minutos
+    if (url.includes('/search')) {
+      return 600;
+    }
+
+    // TTL por defecto - 15 minutos
+    return 900;
   }
 }

@@ -15,10 +15,18 @@
     "outDir": "./dist",
     "incremental": true,
     "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": true,
     "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": false,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": false
   }
 }
