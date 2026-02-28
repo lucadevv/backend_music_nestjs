@@ -379,4 +379,22 @@ export class MusicController {
       throw new HttpException('Failed to fetch genres', HttpStatus.BAD_GATEWAY);
     }
   }
+
+  @Get('radio/:videoId')
+  @ApiOperation({ summary: 'Obtener playlist de radio basada en una canción' })
+  @ApiParam({ name: 'videoId', description: 'ID del video/canción' })
+  @ApiQuery({ name: 'limit', description: 'Número de canciones', required: false, type: Number, example: 10 })
+  @ApiResponse({ status: 200, description: 'Playlist de radio obtenida exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 502, description: 'Error del servicio externo' })
+  async getRadio(
+    @Param('videoId') videoId: string,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    try {
+      return await this.musicApiService.getRadioPlaylist(videoId, limit);
+    } catch (error) {
+      throw new HttpException('Failed to fetch radio playlist', HttpStatus.BAD_GATEWAY);
+    }
+  }
 }

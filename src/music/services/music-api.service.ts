@@ -306,4 +306,26 @@ export class MusicApiService {
       `/search/?q=${encodeURIComponent(query)}&filter=${filter}&include_stream_urls=true`
     );
   }
+
+  async getRadioPlaylist(videoId: string, limit: number = 10): Promise<{
+    tracks: Array<{
+      videoId: string;
+      title: string;
+      artists?: Array<{ name: string; id?: string }>;
+      duration?: number;
+      thumbnail?: string;
+      stream_url?: string;
+    }>;
+  }> {
+    return this.request<{
+      tracks: Array<{
+        videoId: string;
+        title: string;
+        artists?: Array<{ name: string; id?: string }>;
+        duration?: number;
+        thumbnail?: string;
+        stream_url?: string;
+      }>;
+    }>(`/watch/?video_id=${videoId}&radio=true&limit=${limit}&include_stream_urls=true`);
+  }
 }
