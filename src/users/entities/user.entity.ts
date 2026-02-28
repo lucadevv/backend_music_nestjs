@@ -66,6 +66,25 @@ export class User {
     @Column({ type: 'timestamp', nullable: true })
     lastLoginAt: Date | null;
 
+    // Configuraciones de usuario
+    @Column({ type: 'varchar', length: 10, default: 'en' })
+    language: string; // 'en', 'es', etc.
+
+    @Column({ type: 'varchar', length: 20, default: 'high' })
+    streamingQuality: string; // 'low', 'medium', 'high', 'hd'
+
+    @Column({ type: 'varchar', length: 20, default: 'high' })
+    downloadQuality: string; // 'low', 'medium', 'high', 'hd'
+
+    @Column({ type: 'boolean', default: true })
+    autoPlay: boolean;
+
+    @Column({ type: 'boolean', default: false })
+    showLyrics: boolean;
+
+    @Column({ type: 'varchar', length: 50, default: 'flat' })
+    equalizerPreset: string; // 'flat', 'rock', 'pop', 'bass_boost', 'treble_boost', 'vocal', 'classical'
+
     @CreateDateColumn()
     createdAt: Date;
 

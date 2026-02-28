@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import { FavoriteSong } from './entities/favorite-song.entity';
 import { FavoritePlaylist } from './entities/favorite-playlist.entity';
 import { FavoriteGenre } from './entities/favorite-genre.entity';
@@ -185,7 +185,7 @@ export class LibraryService {
     userId: string,
     playlistId?: string,
     externalPlaylistId?: string,
-    metadata?: { name?: string; thumbnail?: string; description?: string },
+    metadata?: { name?: string; thumbnail?: string; description?: string; trackCount?: number },
   ): Promise<FavoritePlaylist> {
     if (!playlistId && !externalPlaylistId) {
       throw new BadRequestException(
@@ -194,6 +194,7 @@ export class LibraryService {
     }
 
     let playlist: Playlist | null = null;
+    let trackCount = metadata?.trackCount ?? 0;
 
     if (externalPlaylistId) {
       // Buscar si ya existe por externalPlaylistId
@@ -216,12 +217,14 @@ export class LibraryService {
         playlistId = playlist!.id;
       } else {
         // Crear playlist con metadata proporcionada
+        // IMPORTANTE: Las playlists de YouTube NO tienen userId
+        // Solo se guardan en favorite_playlists, no en playlists del usuario
         playlist = this.playlistRepository.create({
           externalPlaylistId,
           name: metadata?.name || `Playlist ${externalPlaylistId}`,
           thumbnail: metadata?.thumbnail || null,
           description: metadata?.description || null,
-          userId,
+          userId: null, // Nullable - YouTube playlists don't have a userId
           isPublic: false,
         });
         playlist = await this.playlistRepository.save(playlist);
@@ -241,6 +244,7 @@ export class LibraryService {
       throw new NotFoundException('Playlist not found');
     }
 
+    // Guardar el track count en la tabla de favoritos
     const existing = await this.favoritePlaylistRepository.findOne({
       where: { userId, playlistId },
     });
@@ -251,6 +255,7 @@ export class LibraryService {
     const favorite = this.favoritePlaylistRepository.create({
       userId,
       playlistId,
+      cachedTrackCount: trackCount > 0 ? trackCount : null,
     });
     const saved = await this.favoritePlaylistRepository.save(favorite);
 
@@ -258,7 +263,7 @@ export class LibraryService {
 
     return this.favoritePlaylistRepository.findOne({
       where: { id: saved.id },
-      relations: ['playlist', 'playlist.user', 'playlist.songs'],
+      relations: ['playlist'],
     }) as Promise<FavoritePlaylist>;
   }
 
@@ -418,5 +423,167 @@ export class LibraryService {
       favoritePlaylists: favoritePlaylistsCount,
       favoriteGenres: favoriteGenresCount,
     };
+  }
+
+  // ============ User Playlists (Playlists creadas por el usuario) ============
+
+  async createUserPlaylist(
+    userId: string,
+    data: { name: string; description?: string; thumbnail?: string; isPublic?: boolean },
+  ) {
+    const playlist = this.playlistRepository.create({
+      name: data.name,
+      description: data.description || null,
+      thumbnail: data.thumbnail || null,
+      userId,
+      isPublic: data.isPublic || false,
+      songs: [],
+    });
+
+    const saved = await this.playlistRepository.save(playlist);
+    return this.getUserPlaylist(userId, saved.id);
+  }
+
+  async getUserPlaylists(
+    _userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<{ data: any[]; total: number }> {
+    // Solo mostrar playlists CREADAS POR EL USUARIO (userId no null/vacío)
+    const [data, total] = await this.playlistRepository.findAndCount({
+      where: { userId: Not(IsNull()) },  // Solo playlists con userId (creadas por usuarios)
+      relations: ['songs'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      data: data.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        thumbnail: p.thumbnail,
+        songCount: p.songs?.length || 0,
+        createdAt: p.createdAt,
+      })),
+      total,
+    };
+  }
+
+  async getUserPlaylist(userId: string, playlistId: string) {
+    const playlist = await this.playlistRepository.findOne({
+      where: { id: playlistId, userId },
+      relations: ['songs'],
+    });
+
+    if (!playlist) {
+      throw new NotFoundException(`Playlist with ID ${playlistId} not found`);
+    }
+
+    return {
+      id: playlist.id,
+      name: playlist.name,
+      description: playlist.description,
+      thumbnail: playlist.thumbnail,
+      isPublic: playlist.isPublic,
+      songs: playlist.songs.map((s) => ({
+        id: s.id,
+        videoId: s.videoId,
+        title: s.title,
+        artist: s.artist,
+        thumbnail: s.thumbnail,
+        duration: s.duration,
+      })),
+      createdAt: playlist.createdAt,
+    };
+  }
+
+  async updateUserPlaylist(
+    userId: string,
+    playlistId: string,
+    data: { name?: string; description?: string; thumbnail?: string; isPublic?: boolean },
+  ) {
+    const playlist = await this.playlistRepository.findOne({
+      where: { id: playlistId, userId },
+    });
+
+    if (!playlist) {
+      throw new NotFoundException(`Playlist with ID ${playlistId} not found`);
+    }
+
+    if (data.name) playlist.name = data.name;
+    if (data.description !== undefined) playlist.description = data.description;
+    if (data.thumbnail !== undefined) playlist.thumbnail = data.thumbnail;
+    if (data.isPublic !== undefined) playlist.isPublic = data.isPublic;
+
+    await this.playlistRepository.save(playlist);
+    return this.getUserPlaylist(userId, playlistId);
+  }
+
+  async deleteUserPlaylist(userId: string, playlistId: string) {
+    const playlist = await this.playlistRepository.findOne({
+      where: { id: playlistId, userId },
+    });
+
+    if (!playlist) {
+      throw new NotFoundException(`Playlist with ID ${playlistId} not found`);
+    }
+
+    await this.playlistRepository.remove(playlist);
+  }
+
+  async addSongToUserPlaylist(
+    userId: string,
+    playlistId: string,
+    data: { videoId: string; title?: string; artist?: string; thumbnail?: string; duration?: number },
+  ) {
+    const playlist = await this.playlistRepository.findOne({
+      where: { id: playlistId, userId },
+      relations: ['songs'],
+    });
+
+    if (!playlist) {
+      throw new NotFoundException(`Playlist with ID ${playlistId} not found`);
+    }
+
+    // Buscar o crear la canción
+    let song = await this.songRepository.findOne({
+      where: { videoId: data.videoId },
+    });
+
+    if (!song) {
+      song = this.songRepository.create({
+        videoId: data.videoId,
+        title: data.title || data.videoId,
+        artist: data.artist || 'Unknown Artist',
+        thumbnail: data.thumbnail || null,
+        duration: data.duration || 0,
+      });
+      song = await this.songRepository.save(song);
+    }
+
+    // Agregar a la playlist si no existe
+    const exists = playlist.songs.some((s) => s.id === song!.id);
+    if (!exists) {
+      playlist.songs.push(song);
+      await this.playlistRepository.save(playlist);
+    }
+
+    return this.getUserPlaylist(userId, playlistId);
+  }
+
+  async removeSongFromUserPlaylist(userId: string, playlistId: string, songId: string) {
+    const playlist = await this.playlistRepository.findOne({
+      where: { id: playlistId, userId },
+      relations: ['songs'],
+    });
+
+    if (!playlist) {
+      throw new NotFoundException(`Playlist with ID ${playlistId} not found`);
+    }
+
+    playlist.songs = playlist.songs.filter((s) => s.id !== songId);
+    await this.playlistRepository.save(playlist);
   }
 }

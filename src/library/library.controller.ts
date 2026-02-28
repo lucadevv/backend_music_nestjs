@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Param,
   Body,
@@ -159,10 +160,11 @@ export class LibraryController {
       user.userId,
       dto.playlistId,
       dto.externalPlaylistId,
-      dto.name || dto.thumbnail || dto.description ? {
+      dto.name || dto.thumbnail || dto.description || dto.trackCount ? {
         name: dto.name,
         thumbnail: dto.thumbnail,
         description: dto.description,
+        trackCount: dto.trackCount,
       } : undefined,
     );
   }
@@ -355,5 +357,142 @@ export class LibraryController {
   @ApiResponse({ status: 401, description: 'No autorizado' })
   async getLibrarySummary(@CurrentUser() user: any) {
     return this.libraryService.getLibrarySummary(user.userId);
+  }
+
+  // ============ User Playlists (Playlists creadas por el usuario) ============
+
+  @Post('user-playlists')
+  @ApiOperation({ summary: 'Crear una nueva playlist' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Nombre de la playlist' },
+        description: { type: 'string', description: 'Descripción opcional' },
+        thumbnail: { type: 'string', description: 'URL de thumbnail opcional' },
+        isPublic: { type: 'boolean', description: 'Si la playlist es pública', default: false },
+      },
+      required: ['name'],
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Playlist creada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  async createUserPlaylist(@CurrentUser() user: any, @Body() body: any) {
+    return this.libraryService.createUserPlaylist(user.userId, body);
+  }
+
+  @Get('user-playlists')
+  @ApiOperation({ summary: 'Obtener playlists del usuario' })
+  @ApiQuery({
+    name: 'page',
+    description: 'Número de página',
+    required: false,
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Elementos por página',
+    required: false,
+    type: Number,
+    example: 20,
+  })
+  @ApiResponse({ status: 200, description: 'Playlists obtenidas exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  async getUserPlaylists(
+    @CurrentUser() user: any,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    return this.libraryService.getUserPlaylists(user.userId, page, limit);
+  }
+
+  @Get('user-playlists/:playlistId')
+  @ApiOperation({ summary: 'Obtener detalles de una playlist del usuario' })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiResponse({ status: 200, description: 'Playlist obtenida exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 404, description: 'Playlist no encontrada' })
+  async getUserPlaylist(@CurrentUser() user: any, @Param('playlistId') playlistId: string) {
+    return this.libraryService.getUserPlaylist(user.userId, playlistId);
+  }
+
+  @Put('user-playlists/:playlistId')
+  @ApiOperation({ summary: 'Actualizar una playlist del usuario' })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        description: { type: 'string' },
+        thumbnail: { type: 'string' },
+        isPublic: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Playlist actualizada exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 404, description: 'Playlist no encontrada' })
+  async updateUserPlaylist(
+    @CurrentUser() user: any,
+    @Param('playlistId') playlistId: string,
+    @Body() body: any,
+  ) {
+    return this.libraryService.updateUserPlaylist(user.userId, playlistId, body);
+  }
+
+  @Delete('user-playlists/:playlistId')
+  @ApiOperation({ summary: 'Eliminar una playlist del usuario' })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiResponse({ status: 200, description: 'Playlist eliminada exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 404, description: 'Playlist no encontrada' })
+  async deleteUserPlaylist(@CurrentUser() user: any, @Param('playlistId') playlistId: string) {
+    await this.libraryService.deleteUserPlaylist(user.userId, playlistId);
+    return { message: 'Playlist deleted successfully' };
+  }
+
+  @Post('user-playlists/:playlistId/songs')
+  @ApiOperation({ summary: 'Agregar canción a playlist del usuario' })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        videoId: { type: 'string', description: 'Video ID de la canción' },
+        title: { type: 'string', description: 'Título de la canción' },
+        artist: { type: 'string', description: 'Artista' },
+        thumbnail: { type: 'string', description: 'URL del thumbnail' },
+        duration: { type: 'number', description: 'Duración en segundos' },
+      },
+      required: ['videoId'],
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Canción agregada a la playlist' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 404, description: 'Playlist no encontrada' })
+  async addSongToUserPlaylist(
+    @CurrentUser() user: any,
+    @Param('playlistId') playlistId: string,
+    @Body() body: any,
+  ) {
+    return this.libraryService.addSongToUserPlaylist(user.userId, playlistId, body);
+  }
+
+  @Delete('user-playlists/:playlistId/songs/:songId')
+  @ApiOperation({ summary: 'Eliminar canción de playlist del usuario' })
+  @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiParam({ name: 'songId', description: 'ID de la canción en la playlist' })
+  @ApiResponse({ status: 200, description: 'Canción eliminada de la playlist' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  async removeSongFromUserPlaylist(
+    @CurrentUser() user: any,
+    @Param('playlistId') playlistId: string,
+    @Param('songId') songId: string,
+  ) {
+    await this.libraryService.removeSongFromUserPlaylist(user.userId, playlistId, songId);
+    return { message: 'Song removed from playlist' };
   }
 }

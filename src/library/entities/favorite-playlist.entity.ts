@@ -33,6 +33,10 @@ export class FavoritePlaylist {
   @JoinColumn({ name: 'playlistId' })
   playlist: Playlist;
 
+  // Track count cacheado para evitar llamadas a YouTube
+  @Column({ type: 'int', nullable: true })
+  cachedTrackCount: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

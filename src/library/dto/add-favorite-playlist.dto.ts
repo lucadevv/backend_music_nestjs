@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsNumber } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AddFavoritePlaylistDto {
@@ -41,4 +41,12 @@ export class AddFavoritePlaylistDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    description: 'Número de canciones (para cachear)',
+    example: 50,
+  })
+  @IsOptional()
+  @IsNumber()
+  trackCount?: number;
 }

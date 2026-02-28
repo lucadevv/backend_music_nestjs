@@ -35,10 +35,10 @@ export class Playlist {
   @Column({ type: 'varchar', length: 1000, nullable: true })
   thumbnail: string | null;
 
-  @Column({ type: 'uuid' })
-  userId: string; // Creador de la playlist
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null; // Creador de la playlist
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'userId' })
   user: User;
 
