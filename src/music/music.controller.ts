@@ -25,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { CacheInterceptor } from '@nestjs/cache-manager';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
 import { LibraryService } from '../library/library.service';
@@ -46,6 +47,7 @@ export class MusicController {
   ) {}
 
   @Get('explore')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Explorar contenido: moods, géneros y charts' })
   @ApiResponse({ status: 200, description: 'Contenido de exploración obtenido exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -59,6 +61,7 @@ export class MusicController {
   }
 
   @Get('explore/moods/:params')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener playlists de un mood específico' })
   @ApiParam({ name: 'params', description: 'Parámetros del mood' })
   @ApiResponse({ status: 200, description: 'Playlists del mood obtenidas exitosamente' })
@@ -73,6 +76,7 @@ export class MusicController {
   }
 
   @Get('explore/genres/:params')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener playlists de un género específico' })
   @ApiParam({ name: 'params', description: 'Parámetros del género' })
   @ApiResponse({ status: 200, description: 'Playlists del género obtenidas exitosamente' })
@@ -87,6 +91,7 @@ export class MusicController {
   }
 
   @Get('playlists/:playlistId')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener detalles de una playlist' })
   @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
   @ApiResponse({ status: 200, description: 'Playlist obtenida exitosamente' })
@@ -349,6 +354,7 @@ export class MusicController {
   }
 
   @Get('categories')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener todas las categorías disponibles' })
   @ApiResponse({ status: 200, description: 'Categorías obtenidas exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -367,6 +373,7 @@ export class MusicController {
   }
 
   @Get('genres')
+  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener todos los géneros y moods disponibles' })
   @ApiResponse({ status: 200, description: 'Géneros obtenidos exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -392,9 +399,24 @@ export class MusicController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
     try {
-      return await this.musicApiService.getRadioPlaylist(videoId, limit);
+      return await this.musicApiService.getRadioPlaylist(videoId, limit, true); // include_stream_urls=true
     } catch (error) {
       throw new HttpException('Failed to fetch radio playlist', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  @Get('lyrics/:browseId')
+  @UseInterceptors(CacheInterceptor)
+  @ApiOperation({ summary: 'Obtener lyrics de una canción' })
+  @ApiParam({ name: 'browseId', description: 'Browse ID de la canción' })
+  @ApiResponse({ status: 200, description: 'Lyrics obtenidos exitosamente' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 502, description: 'Error del servicio externo' })
+  async getLyrics(@Param('browseId') browseId: string) {
+    try {
+      return await this.musicApiService.getLyrics(browseId);
+    } catch (error) {
+      throw new HttpException('Failed to fetch lyrics', HttpStatus.BAD_GATEWAY);
     }
   }
 }

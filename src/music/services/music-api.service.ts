@@ -222,10 +222,10 @@ export class MusicApiService {
     thumbnail?: string;
   }> {
     // Usar cache de Python (Redis) - no bypass
-    // El cache de streaming URLs está en Python con TTL de 2 horas
+    // El cache de streaming URLs está en Python con TTL de 4 horas
     // Esto reduce llamadas a YouTube y evita rate limiting
     const response = await this.request<{
-      url: string;
+      streamUrl: string;
       title?: string;
       artist?: string;
       duration?: number;
@@ -239,7 +239,7 @@ export class MusicApiService {
     const proxyUrl = `${proxyBaseUrl}/music/stream-proxy/${videoId}`;
 
     return {
-      streamUrl: response.url,
+      streamUrl: response.streamUrl,
       proxyUrl: proxyUrl,
       title: response.title,
       artist: response.artist,
@@ -277,7 +277,7 @@ export class MusicApiService {
     return {
       results: response.results.map((r: any) => ({
         videoId: r.videoId,
-        url: r.url,
+        streamUrl: r.streamUrl,
         title: r.title,
         artist: r.artist,
         duration: r.duration,
@@ -307,7 +307,7 @@ export class MusicApiService {
     );
   }
 
-  async getRadioPlaylist(videoId: string, limit: number = 10): Promise<{
+  async getRadioPlaylist(videoId: string, limit: number = 10, includeStreamUrls: boolean = true): Promise<{
     tracks: Array<{
       videoId: string;
       title: string;
@@ -317,6 +317,7 @@ export class MusicApiService {
       stream_url?: string;
     }>;
   }> {
+    const streamParam = includeStreamUrls ? '&include_stream_urls=true' : '';
     return this.request<{
       tracks: Array<{
         videoId: string;
@@ -326,6 +327,12 @@ export class MusicApiService {
         thumbnail?: string;
         stream_url?: string;
       }>;
-    }>(`/watch/?video_id=${videoId}&radio=true&limit=${limit}&include_stream_urls=true`);
+    }>(`/watch/?video_id=${videoId}&radio=true&limit=${limit}${streamParam}`);
+  }
+
+  async getLyrics(browseId: string): Promise<{ lyrics?: string; source?: string; error?: string }> {
+    return this.request<{ lyrics?: string; source?: string; error?: string }>(
+      `/browse/lyrics-by-video/${browseId}`
+    );
   }
 }

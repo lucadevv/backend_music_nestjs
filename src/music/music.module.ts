@@ -15,7 +15,7 @@ import { LibraryModule } from '../library/library.module';
 @Module({
     imports: [
         HttpModule.register({
-            timeout: 30000,
+            timeout: 60000,
             maxRedirects: 5,
         }),
         JwtModule.registerAsync({

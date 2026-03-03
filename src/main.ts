@@ -67,8 +67,9 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(port ?? 3000);
+  await app.listen(port ?? 3000, '0.0.0.0');
   console.log(`🚀 Aplicación corriendo en: http://localhost:${port}/${apiPrefix}`);
+  console.log(`🚀 Aplicación corriendo en red: http://0.0.0.0:${port}/${apiPrefix}`);
   console.log(`📚 Documentación Swagger: http://localhost:${port}/api/docs`);
 }
 bootstrap();
