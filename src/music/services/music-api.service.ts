@@ -198,19 +198,19 @@ export class MusicApiService {
   }
 
   async explore(): Promise<ExploreResponse> {
-    return this.request<ExploreResponse>('/explore/?include_stream_urls=true');
+    return this.request<ExploreResponse>('/explore/?include_stream_urls=false');
   }
 
   async getMoodPlaylists(params: string): Promise<PlaylistResponse[]> {
-    return this.request<PlaylistResponse[]>(`/explore/moods/${params}?include_stream_urls=true`);
+    return this.request<PlaylistResponse[]>(`/explore/moods/${params}?include_stream_urls=false`);
   }
 
   async getGenrePlaylists(params: string): Promise<PlaylistResponse[]> {
-    return this.request<PlaylistResponse[]>(`/explore/genres/${params}?include_stream_urls=true`);
+    return this.request<PlaylistResponse[]>(`/explore/genres/${params}?include_stream_urls=false`);
   }
 
   async getPlaylist(playlistId: string): Promise<PlaylistResponse> {
-    return this.request<PlaylistResponse>(`/playlists/${playlistId}?include_stream_urls=true`);
+    return this.request<PlaylistResponse>(`/playlists/${playlistId}?include_stream_urls=false`);
   }
 
   async getStreamUrl(videoId: string): Promise<{
@@ -303,11 +303,11 @@ export class MusicApiService {
 
   async search(query: string, filter: string = 'songs'): Promise<SearchResponse> {
     return this.request<SearchResponse>(
-      `/search/?q=${encodeURIComponent(query)}&filter=${filter}&include_stream_urls=true`
+      `/search/?q=${encodeURIComponent(query)}&filter=${filter}&include_stream_urls=false`
     );
   }
 
-  async getRadioPlaylist(videoId: string, limit: number = 10, includeStreamUrls: boolean = true): Promise<{
+  async getRadioPlaylist(videoId: string, limit: number = 10, includeStreamUrls: boolean = false): Promise<{
     tracks: Array<{
       videoId: string;
       title: string;
