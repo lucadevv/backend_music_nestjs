@@ -185,6 +185,8 @@ export class MusicController {
     const searches = await this.recentSearchService.getRecentSearches(user.userId, startIndex, limit);
     return searches.map((search) => ({
       id: search.id,
+      query: search.query,
+      filter: search.filter,
       videoId: search.videoId,
       songData: search.songData,
       createdAt: search.createdAt,
