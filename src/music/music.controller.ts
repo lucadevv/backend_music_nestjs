@@ -9,12 +9,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   UseInterceptors,
-  Res,
-  Logger,
 } from '@nestjs/common';
-import type { Response } from 'express';
-import { firstValueFrom } from 'rxjs';
-import { AxiosRequestConfig } from 'axios';
 import {
   ApiTags,
   ApiOperation,
@@ -23,8 +18,6 @@ import {
   ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import { CacheInterceptor } from '@nestjs/cache-manager';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
@@ -42,8 +35,6 @@ export class MusicController {
     private readonly musicApiService: MusicApiService,
     private readonly recentSearchService: RecentSearchService,
     private readonly libraryService: LibraryService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) {}
 
   @Get('explore')
@@ -91,29 +82,41 @@ export class MusicController {
   }
 
   @Get('playlists/:playlistId')
-  @UseInterceptors(CacheInterceptor)
+  // @UseInterceptors(CacheInterceptor) // Disabled - cache doesn't support pagination properly
   @ApiOperation({ summary: 'Obtener detalles de una playlist' })
   @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
+  @ApiQuery({ name: 'limit', description: 'Número de canciones a obtener', required: false, type: Number, example: 20 })
   @ApiResponse({ status: 200, description: 'Playlist obtenida exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 502, description: 'Error del servicio externo' })
-  async getPlaylist(@Param('playlistId') playlistId: string) {
+  async getPlaylist(
+    @Param('playlistId') playlistId: string,
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
+  ) {
     try {
-      return await this.musicApiService.getPlaylist(playlistId);
+      return await this.musicApiService.getPlaylist(playlistId, startIndex, limit);
     } catch (error) {
       throw new HttpException('Failed to fetch playlist', HttpStatus.BAD_GATEWAY);
     }
   }
 
+  @Public()
   @Get('stream/:videoId')
   @ApiOperation({ summary: 'Obtener URL de stream de audio de una canción' })
   @ApiParam({ name: 'videoId', description: 'ID del video/canción' })
+  @ApiQuery({ name: 'bypass_cache', description: 'Ignorar caché y obtener URL fresca', required: false, type: Boolean })
   @ApiResponse({ status: 200, description: 'URL de stream obtenida exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 502, description: 'Error del servicio externo' })
-  async getStreamUrl(@Param('videoId') videoId: string) {
+  async getStreamUrl(
+    @Param('videoId') videoId: string,
+    @Query('bypass_cache') bypassCache: string = 'false',
+  ) {
     try {
-      return await this.musicApiService.getStreamUrl(videoId);
+      const bypass = bypassCache.toLowerCase() === 'true';
+      return await this.musicApiService.getStreamUrl(videoId, bypass);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -125,107 +128,17 @@ export class MusicController {
     }
   }
 
-  @Public()
-  @Get('stream-proxy/:videoId')
-  @ApiOperation({ summary: 'Proxy de streaming con autenticación' })
-  @ApiParam({ name: 'videoId', description: 'ID del video/canción' })
-  @ApiQuery({ name: 'token', description: 'JWT token de acceso', required: true })
-  @ApiResponse({ status: 200, description: 'Stream de audio', content: { 'audio/mpeg': {} } })
-  @ApiResponse({ status: 401, description: 'Token inválido o expirado' })
-  @ApiResponse({ status: 404, description: 'Video no encontrado' })
-  @ApiResponse({ status: 502, description: 'Error del servicio externo' })
-  async streamProxy(
-    @Param('videoId') videoId: string,
-    @Query('token') token: string,
-    @Res() res: Response,
-  ) {
-    const logger = new Logger('StreamProxy');
-
-    // Validar el token
-    if (!token) {
-      throw new HttpException('Token es requerido', HttpStatus.UNAUTHORIZED);
-    }
-
-    try {
-      // Verificar el token con issuer y audience igual que en JwtStrategy
-      const jwtSecret = this.configService.get<string>('jwt.secret') || 'Planeton100603453453453434543.-234234';
-      const jwtIssuer = this.configService.get<string>('jwt.issuer') || 'music_app';
-      const jwtAudience = this.configService.get<string>('jwt.audience') || 'music_app';
-      
-      // Verificar el token con issuer y audience
-      const decoded = this.jwtService.verify(token, { 
-        secret: jwtSecret,
-        issuer: jwtIssuer,
-        audience: jwtAudience,
-      });
-      
-      if (!decoded || !decoded.sub) {
-        throw new HttpException('Token inválido', HttpStatus.UNAUTHORIZED);
-      }
-      
-      logger.log(`Token válido para usuario: ${decoded.sub}`);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`Token inválido: ${errorMessage}`);
-      throw new HttpException('Token inválido o expirado', HttpStatus.UNAUTHORIZED);
-    }
-
-    try {
-      const streamData = await this.musicApiService.getStreamUrl(videoId);
-      const youtubeUrl = streamData.streamUrl;
-
-      logger.log(`Streaming video ${videoId} through proxy`);
-
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Accept-Ranges', 'none');
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-
-      if (streamData.title) {
-        res.setHeader('X-Title', streamData.title);
-      }
-      if (streamData.artist) {
-        res.setHeader('X-Artist', streamData.artist);
-      }
-      if (streamData.duration) {
-        res.setHeader('X-Duration', streamData.duration.toString());
-      }
-
-      const config: AxiosRequestConfig = {
-        responseType: 'stream',
-        timeout: 60000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': '*/*',
-        },
-      };
-
-      const response = await firstValueFrom(
-        this.musicApiService.getHttpService().get(youtubeUrl, config),
-      );
-
-      (response.data as any).pipe(res);
-
-      res.on('close', () => {
-        logger.log(`Stream closed for video ${videoId}`);
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`Error streaming video ${videoId}: ${errorMessage}`);
-
-      if (!res.headersSent) {
-        if (error instanceof HttpException) {
-          throw error;
-        }
-        throw new HttpException('Failed to stream audio', HttpStatus.BAD_GATEWAY);
-      }
-    }
-  }
+  // El endpoint stream-proxy fue movido al servicio Python (FastAPI)
+  // El endpoint /music/stream/{videoId} retorna { streamUrl, proxyUrl }
+  // Flutter usa streamUrl (URL directa de YouTube) para reproducción directa
+  // Ver: music-api.service.ts línea 241
 
   @Get('search')
   @ApiOperation({ summary: 'Buscar música y guardar búsqueda en historial' })
   @ApiQuery({ name: 'q', description: 'Término de búsqueda', required: true })
   @ApiQuery({ name: 'filter', description: 'Filtro de búsqueda', required: false, example: 'songs' })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
+  @ApiQuery({ name: 'limit', description: 'Número de resultados', required: false, type: Number, example: 20 })
   @ApiResponse({ status: 200, description: 'Búsqueda realizada exitosamente' })
   @ApiResponse({ status: 400, description: 'Parámetro de búsqueda requerido' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -233,6 +146,8 @@ export class MusicController {
   async search(
     @Query('q') query: string,
     @Query('filter') filter: string = 'songs',
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
     @CurrentUser() user: any,
   ) {
     if (!query) {
@@ -240,7 +155,7 @@ export class MusicController {
     }
 
     try {
-      const results = await this.musicApiService.search(query, filter);
+      const results = await this.musicApiService.search(query, filter, startIndex, limit);
 
       const firstSong = results.results && results.results.length > 0
         ? results.results.find((item) => item.videoId && item.videoId.trim() !== '')
@@ -391,17 +306,55 @@ export class MusicController {
   @ApiOperation({ summary: 'Obtener playlist de radio basada en una canción' })
   @ApiParam({ name: 'videoId', description: 'ID del video/canción' })
   @ApiQuery({ name: 'limit', description: 'Número de canciones', required: false, type: Number, example: 10 })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
   @ApiResponse({ status: 200, description: 'Playlist de radio obtenida exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 502, description: 'Error del servicio externo' })
   async getRadio(
     @Param('videoId') videoId: string,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
   ) {
     try {
-      return await this.musicApiService.getRadioPlaylist(videoId, limit, true); // include_stream_urls=true
+      return await this.musicApiService.getRadioPlaylist(videoId, limit, startIndex, false); // include_stream_urls=false
     } catch (error) {
       throw new HttpException('Failed to fetch radio playlist', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  @Get('watch')
+  @ApiOperation({ summary: 'Obtener playlist de reproducción (siguientes canciones)' })
+  @ApiQuery({ name: 'video_id', description: 'ID del video para iniciar', required: false, type: String })
+  @ApiQuery({ name: 'playlist_id', description: 'ID de la playlist', required: false, type: String })
+  @ApiQuery({ name: 'limit', description: 'Número de canciones', required: false, type: Number, example: 25 })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
+  @ApiQuery({ name: 'shuffle', description: 'Mezclar playlist', required: false, type: Boolean, example: false })
+  @ApiResponse({ status: 200, description: 'Playlist de reproducción obtenida exitosamente' })
+  @ApiResponse({ status: 400, description: 'Se requiere video_id o playlist_id' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 502, description: 'Error del servicio externo' })
+  async getWatchPlaylist(
+    @Query('video_id') videoId: string,
+    @Query('playlist_id') playlistId: string,
+    @Query('limit', new DefaultValuePipe(25), ParseIntPipe) limit: number,
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
+    @Query('shuffle', new DefaultValuePipe(false)) shuffle: boolean = false,
+  ) {
+    if (!videoId && !playlistId) {
+      throw new HttpException('Se requiere video_id o playlist_id', HttpStatus.BAD_REQUEST);
+    }
+    try {
+      return await this.musicApiService.getWatchPlaylist(
+        videoId || undefined,
+        playlistId || undefined,
+        limit,
+        startIndex,
+        shuffle,
+        true, // includeStreamUrls
+        10, // prefetchCount
+      );
+    } catch (error) {
+      throw new HttpException('Failed to fetch watch playlist', HttpStatus.BAD_GATEWAY);
     }
   }
 

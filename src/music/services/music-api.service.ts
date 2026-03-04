@@ -198,22 +198,22 @@ export class MusicApiService {
   }
 
   async explore(): Promise<ExploreResponse> {
-    return this.request<ExploreResponse>('/explore/?include_stream_urls=false');
+    return this.request<ExploreResponse>('/explore/?include_stream_urls=true');
   }
 
   async getMoodPlaylists(params: string): Promise<PlaylistResponse[]> {
-    return this.request<PlaylistResponse[]>(`/explore/moods/${params}?include_stream_urls=false`);
+    return this.request<PlaylistResponse[]>(`/explore/moods/${params}?include_stream_urls=true`);
   }
 
   async getGenrePlaylists(params: string): Promise<PlaylistResponse[]> {
-    return this.request<PlaylistResponse[]>(`/explore/genres/${params}?include_stream_urls=false`);
+    return this.request<PlaylistResponse[]>(`/explore/genres/${params}?include_stream_urls=true`);
   }
 
-  async getPlaylist(playlistId: string): Promise<PlaylistResponse> {
-    return this.request<PlaylistResponse>(`/playlists/${playlistId}?include_stream_urls=false`);
+  async getPlaylist(playlistId: string, startIndex: number = 0, limit: number = 20): Promise<PlaylistResponse> {
+    return this.request<PlaylistResponse>(`/playlists/${playlistId}?include_stream_urls=true&prefetch_count=10&start_index=${startIndex}&limit=${limit}`);
   }
 
-  async getStreamUrl(videoId: string): Promise<{
+  async getStreamUrl(videoId: string, bypassCache: boolean = false): Promise<{
     streamUrl: string;
     proxyUrl: string;
     title?: string;
@@ -221,22 +221,23 @@ export class MusicApiService {
     duration?: number;
     thumbnail?: string;
   }> {
-    // Usar cache de Python (Redis) - no bypass
+    // Usar cache de Python (Redis) por defecto
     // El cache de streaming URLs está en Python con TTL de 4 horas
     // Esto reduce llamadas a YouTube y evita rate limiting
+    // bypassCache=true fuerza obtener URL fresca
+    const bypassParam = bypassCache ? '?bypass_cache=true' : '';
     const response = await this.request<{
       streamUrl: string;
       title?: string;
       artist?: string;
       duration?: number;
       thumbnail?: string;
-    }>(`/stream/${videoId}`);
+    }>(`/stream/${videoId}${bypassParam}`);
 
-    // Construir la URL del proxy usando la configuración
-    // APP_URL en .env se mapea a app.url en ConfigService
-    const appUrl = this.configService.get<string>('app.url') || 'http://localhost:3000';
-    const proxyBaseUrl = `${appUrl}/api`;
-    const proxyUrl = `${proxyBaseUrl}/music/stream-proxy/${videoId}`;
+    // Construir la URL del proxy usando el servicio Python (público, sin auth)
+    // El endpoint /stream/proxy/{videoId} hace el proxy directamente sin problemas de CORS
+    const musicServiceBaseUrl = this.configService.get<string>('externalApi.musicServiceBaseUrl') || 'http://localhost:8000/api/v1';
+    const proxyUrl = `${musicServiceBaseUrl}/stream/proxy/${videoId}`;
 
     return {
       streamUrl: response.streamUrl,
@@ -301,13 +302,13 @@ export class MusicApiService {
     return response;
   }
 
-  async search(query: string, filter: string = 'songs'): Promise<SearchResponse> {
+  async search(query: string, filter: string = 'songs', startIndex: number = 0, limit: number = 20): Promise<SearchResponse> {
     return this.request<SearchResponse>(
-      `/search/?q=${encodeURIComponent(query)}&filter=${filter}&include_stream_urls=false`
+      `/search/?q=${encodeURIComponent(query)}&filter=${filter}&include_stream_urls=true&start_index=${startIndex}&limit=${limit}`
     );
   }
 
-  async getRadioPlaylist(videoId: string, limit: number = 10, includeStreamUrls: boolean = false): Promise<{
+  async getRadioPlaylist(videoId: string, limit: number = 10, startIndex: number = 0, includeStreamUrls: boolean = false): Promise<{
     tracks: Array<{
       videoId: string;
       title: string;
@@ -327,7 +328,46 @@ export class MusicApiService {
         thumbnail?: string;
         stream_url?: string;
       }>;
-    }>(`/watch/?video_id=${videoId}&radio=true&limit=${limit}${streamParam}`);
+    }>(`/watch/?video_id=${videoId}&radio=true&limit=${limit}&start_index=${startIndex}${streamParam}`);
+  }
+
+  async getWatchPlaylist(
+    videoId?: string,
+    playlistId?: string,
+    limit: number = 25,
+    startIndex: number = 0,
+    shuffle: boolean = false,
+    includeStreamUrls: boolean = true,
+    prefetchCount: number = 10,
+  ): Promise<{
+    tracks: Array<{
+      videoId: string;
+      title: string;
+      artists?: Array<{ name: string; id?: string }>;
+      duration?: number;
+      thumbnail?: string;
+      stream_url?: string;
+    }>;
+  }> {
+    const params = new URLSearchParams();
+    if (videoId) params.append('video_id', videoId);
+    if (playlistId) params.append('playlist_id', playlistId);
+    params.append('limit', limit.toString());
+    params.append('start_index', startIndex.toString());
+    if (shuffle) params.append('shuffle', 'true');
+    if (includeStreamUrls) params.append('include_stream_urls', 'true');
+    params.append('prefetch_count', prefetchCount.toString());
+
+    return this.request<{
+      tracks: Array<{
+        videoId: string;
+        title: string;
+        artists?: Array<{ name: string; id?: string }>;
+        duration?: number;
+        thumbnail?: string;
+        stream_url?: string;
+      }>;
+    }>(`/watch/?${params.toString()}`);
   }
 
   async getLyrics(browseId: string): Promise<{ lyrics?: string; source?: string; error?: string }> {
