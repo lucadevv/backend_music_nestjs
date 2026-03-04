@@ -255,11 +255,19 @@ export class MusicController {
 
   @Get('recently-listened')
   @ApiOperation({ summary: 'Obtener canciones recientemente escuchadas' })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
+  @ApiQuery({ name: 'limit', description: 'Número de canciones', required: false, type: Number, example: 20 })
   @ApiResponse({ status: 200, description: 'Canciones recientes obtenidas exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  async getRecentlyListened(@CurrentUser() user: any) {
+  async getRecentlyListened(
+    @CurrentUser() user: any,
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
+  ) {
     try {
-      const favoriteSongs = await this.libraryService.getFavoriteSongs(user.userId, 1, 20);
+      // Calculate page from start_index
+      const page = Math.floor(startIndex / limit) + 1;
+      const favoriteSongs = await this.libraryService.getFavoriteSongs(user.userId, page, limit);
       return {
         songs: favoriteSongs.data.map((fav) => ({ ...fav.song, addedAt: fav.createdAt })),
         total: favoriteSongs.total,
