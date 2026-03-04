@@ -271,12 +271,12 @@ export class MusicApiService {
     const response = await this.request<{
       results: Array<any>;
       summary: any;
-    }>(`/stream/batch?video_ids=${videoIds.join(',')}`);
+    }>(`/stream/batch?ids=${videoIds.join(',')}`);
 
     return {
       results: response.results.map((r: any) => ({
         videoId: r.videoId,
-        streamUrl: r.streamUrl,
+        url: r.url || r.streamUrl,
         title: r.title,
         artist: r.artist,
         duration: r.duration,
