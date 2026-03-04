@@ -173,14 +173,16 @@ export class MusicController {
 
   @Get('recent-searches')
   @ApiOperation({ summary: 'Obtener búsquedas recientes del usuario' })
+  @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
   @ApiQuery({ name: 'limit', description: 'Número máximo de búsquedas', required: false, type: Number, example: 10 })
   @ApiResponse({ status: 200, description: 'Búsquedas recientes obtenidas exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   async getRecentSearches(
     @CurrentUser() user: any,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
   ) {
-    const searches = await this.recentSearchService.getRecentSearches(user.userId, limit);
+    const searches = await this.recentSearchService.getRecentSearches(user.userId, startIndex, limit);
     return searches.map((search) => ({
       id: search.id,
       videoId: search.videoId,

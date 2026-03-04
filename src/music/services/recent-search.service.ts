@@ -48,11 +48,13 @@ export class RecentSearchService {
 
   async getRecentSearches(
     userId: string,
+    startIndex: number = 0,
     limit: number = 10,
   ): Promise<RecentSearch[]> {
     return this.recentSearchRepository.find({
       where: { userId },
       order: { lastSearchedAt: 'DESC' },
+      skip: startIndex,
       take: limit,
     });
   }
