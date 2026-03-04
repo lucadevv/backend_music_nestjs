@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { CacheInterceptor } from '@nestjs/cache-manager';
 import { LibraryService } from './library.service';
+import { MusicApiService } from '../music/services/music-api.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AddFavoriteSongDto } from './dto/add-favorite-song.dto';
 import { AddFavoritePlaylistDto } from './dto/add-favorite-playlist.dto';
@@ -31,7 +32,10 @@ import { AddFavoriteGenreDto } from './dto/add-favorite-genre.dto';
 @ApiBearerAuth('JWT-auth')
 @Controller('library')
 export class LibraryController {
-  constructor(private readonly libraryService: LibraryService) {}
+  constructor(
+    private readonly libraryService: LibraryService,
+    private readonly musicApiService: MusicApiService,
+  ) {}
 
   @Post('songs')
   @ApiOperation({
@@ -86,8 +90,8 @@ export class LibraryController {
   }
 
   @Get('songs')
-  @UseInterceptors(CacheInterceptor)
-  @ApiOperation({ summary: 'Obtener canciones favoritas del usuario' })
+  // @UseInterceptors(CacheInterceptor) // Disabled - stream URLs expire and need to be fetched fresh
+  @ApiOperation({ summary: 'Obtener canciones favoritas del usuario con stream URLs' })
   @ApiQuery({
     name: 'page',
     description: 'Número de página',
@@ -112,7 +116,42 @@ export class LibraryController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
-    return this.libraryService.getFavoriteSongs(user.userId, page, limit);
+    const result = await this.libraryService.getFavoriteSongs(user.userId, page, limit);
+    
+    // Get videoIds to fetch stream URLs
+    const songs = result.data.map((fav) => fav.song);
+    const videoIds = songs
+      .map((s) => s.videoId)
+      .filter((v): v is string => !!v);
+    
+    // Fetch stream URLs for all songs
+    let streamUrlsMap: Record<string, string> = {};
+    if (videoIds.length > 0) {
+      try {
+        const streams = await this.musicApiService.getBatchStreamUrls(videoIds);
+        streams.results.forEach((s) => {
+          if (s.url) {
+            streamUrlsMap[s.videoId] = s.url;
+          }
+        });
+      } catch (e) {
+        // If stream fetch fails, continue without URLs
+      }
+    }
+    
+    // Add stream_url to each song
+    const songsWithStreams = result.data.map((fav) => ({
+      ...fav.song,
+      stream_url: fav.song.videoId ? streamUrlsMap[fav.song.videoId] : undefined,
+      addedAt: fav.createdAt,
+    }));
+    
+    return {
+      data: songsWithStreams,
+      total: result.total,
+      page,
+      limit,
+    };
   }
 
   @Get('songs/:songId/check')

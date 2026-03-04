@@ -270,8 +270,37 @@ export class MusicController {
       // Calculate page from start_index
       const page = Math.floor(startIndex / limit) + 1;
       const favoriteSongs = await this.libraryService.getFavoriteSongs(user.userId, page, limit);
+      
+      // Get videoIds to fetch stream URLs
+      const songs = favoriteSongs.data.map((fav) => fav.song);
+      const videoIds = songs
+        .map((s) => s.videoId)
+        .filter((v): v is string => !!v);
+      
+      // Fetch stream URLs for all songs
+      let streamUrlsMap: Record<string, string> = {};
+      if (videoIds.length > 0) {
+        try {
+          const streams = await this.musicApiService.getBatchStreamUrls(videoIds);
+          streams.results.forEach((s) => {
+            if (s.url) {
+              streamUrlsMap[s.videoId] = s.url;
+            }
+          });
+        } catch (e) {
+          // If stream fetch fails, continue without URLs
+        }
+      }
+      
+      // Add stream_url to each song
+      const songsWithStreams = songs.map((song) => ({
+        ...song,
+        stream_url: song.videoId ? streamUrlsMap[song.videoId] : undefined,
+        addedAt: favoriteSongs.data.find((f) => f.song.id === song.id)?.createdAt,
+      }));
+      
       return {
-        songs: favoriteSongs.data.map((fav) => ({ ...fav.song, addedAt: fav.createdAt })),
+        songs: songsWithStreams,
         total: favoriteSongs.total,
       };
     } catch (error) {
