@@ -82,7 +82,6 @@ export class MusicController {
   }
 
   @Get('playlists/:playlistId')
-  // @UseInterceptors(CacheInterceptor) // Disabled - cache doesn't support pagination properly
   @ApiOperation({ summary: 'Obtener detalles de una playlist' })
   @ApiParam({ name: 'playlistId', description: 'ID de la playlist' })
   @ApiQuery({ name: 'start_index', description: 'Índice inicial para paginación', required: false, type: Number, example: 0 })
