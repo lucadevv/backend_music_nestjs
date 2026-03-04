@@ -267,13 +267,11 @@ export class MusicApiService {
       failed: number;
     };
   }> {
-    // Usar el endpoint batch de FastAPI
+    // Usar el endpoint batch de FastAPI (GET method)
     const response = await this.request<{
       results: Array<any>;
       summary: any;
-    }>(`/stream/batch?video_ids=${videoIds.join(',')}&preload=false`, {
-      method: 'POST',
-    });
+    }>(`/stream/batch?video_ids=${videoIds.join(',')}`);
 
     return {
       results: response.results.map((r: any) => ({
