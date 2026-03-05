@@ -9,7 +9,6 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,7 +19,6 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
-import { CacheInterceptor } from '@nestjs/cache-manager';
 import { LibraryService } from './library.service';
 import { MusicApiService } from '../music/services/music-api.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -232,7 +230,6 @@ export class LibraryController {
   }
 
   @Get('playlists')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener playlists favoritas del usuario' })
   @ApiQuery({
     name: 'page',
@@ -330,7 +327,6 @@ export class LibraryController {
   }
 
   @Get('genres')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener géneros favoritos del usuario' })
   @ApiQuery({
     name: 'page',

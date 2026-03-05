@@ -240,7 +240,7 @@ export class MusicApiService {
     const proxyUrl = `${musicServiceBaseUrl}/stream/proxy/${videoId}`;
 
     return {
-      streamUrl: response.streamUrl,
+      streamUrl: response.streamUrl, // Usar URL directa del servicio Python
       proxyUrl: proxyUrl,
       title: response.title,
       artist: response.artist,
@@ -276,7 +276,7 @@ export class MusicApiService {
     return {
       results: response.results.map((r: any) => ({
         videoId: r.videoId,
-        url: r.url || r.streamUrl,
+        url: r.url || r.streamUrl, // URL directa del servicio Python
         title: r.title,
         artist: r.artist,
         duration: r.duration,

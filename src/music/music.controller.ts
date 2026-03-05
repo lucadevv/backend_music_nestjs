@@ -8,7 +8,6 @@ import {
   Delete,
   DefaultValuePipe,
   ParseIntPipe,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,18 +17,17 @@ import {
   ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { CacheInterceptor } from '@nestjs/cache-manager';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
 import { LibraryService } from '../library/library.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { HttpCacheInterceptor } from '../common/interceptors/http-cache.interceptor';
 
 @ApiTags('music')
 @ApiBearerAuth('JWT-auth')
 @Controller('music')
-@UseInterceptors(HttpCacheInterceptor)
+// NO usar cache - el servicio Python ya cachea las stream URLs
+// Cachear aquí causa problemas con URLs expiradas
 export class MusicController {
   constructor(
     private readonly musicApiService: MusicApiService,
@@ -38,7 +36,6 @@ export class MusicController {
   ) {}
 
   @Get('explore')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Explorar contenido: moods, géneros y charts' })
   @ApiResponse({ status: 200, description: 'Contenido de exploración obtenido exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -52,7 +49,6 @@ export class MusicController {
   }
 
   @Get('explore/moods/:params')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener playlists de un mood específico' })
   @ApiParam({ name: 'params', description: 'Parámetros del mood' })
   @ApiResponse({ status: 200, description: 'Playlists del mood obtenidas exitosamente' })
@@ -67,7 +63,6 @@ export class MusicController {
   }
 
   @Get('explore/genres/:params')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener playlists de un género específico' })
   @ApiParam({ name: 'params', description: 'Parámetros del género' })
   @ApiResponse({ status: 200, description: 'Playlists del género obtenidas exitosamente' })
@@ -127,7 +122,7 @@ export class MusicController {
     }
   }
 
-  // El endpoint stream-proxy fue movido al servicio Python (FastAPI)
+  // El endpoint stream-proxy fue movió al servicio Python (FastAPI)
   // El endpoint /music/stream/{videoId} retorna { streamUrl, proxyUrl }
   // Flutter usa streamUrl (URL directa de YouTube) para reproducción directa
   // Ver: music-api.service.ts línea 241
@@ -309,7 +304,6 @@ export class MusicController {
   }
 
   @Get('categories')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener todas las categorías disponibles' })
   @ApiResponse({ status: 200, description: 'Categorías obtenidas exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -328,7 +322,6 @@ export class MusicController {
   }
 
   @Get('genres')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener todos los géneros y moods disponibles' })
   @ApiResponse({ status: 200, description: 'Géneros obtenidos exitosamente' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
@@ -356,7 +349,7 @@ export class MusicController {
     @Query('start_index', new DefaultValuePipe(0), ParseIntPipe) startIndex: number = 0,
   ) {
     try {
-      return await this.musicApiService.getRadioPlaylist(videoId, limit, startIndex, false); // include_stream_urls=false
+      return await this.musicApiService.getRadioPlaylist(videoId, limit, startIndex, true); // include_stream_urls=true
     } catch (error) {
       throw new HttpException('Failed to fetch radio playlist', HttpStatus.BAD_GATEWAY);
     }
@@ -399,7 +392,6 @@ export class MusicController {
   }
 
   @Get('lyrics/:browseId')
-  @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: 'Obtener lyrics de una canción' })
   @ApiParam({ name: 'browseId', description: 'Browse ID de la canción' })
   @ApiResponse({ status: 200, description: 'Lyrics obtenidos exitosamente' })
