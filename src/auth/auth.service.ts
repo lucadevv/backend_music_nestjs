@@ -17,6 +17,7 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { GoogleTokenService, GoogleTokenInfo } from './services/google-token.service';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +25,7 @@ export class AuthService {
         private readonly usersService: UsersService,
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
+        private readonly googleTokenService: GoogleTokenService,
         @InjectRepository(RefreshToken)
         private readonly refreshTokenRepository: Repository<RefreshToken>,
     ) { }
@@ -134,6 +136,95 @@ export class AuthService {
 
         return this.generateTokens(user!);
     }
+
+  async loginWithGoogleMobile(
+    idToken?: string,
+    accessToken?: string,
+    _email?: string,
+    name?: string,
+  ): Promise<{ response: AuthResponseDto; isNewUser: boolean }> {
+    // Verify ID token first (preferred), fallback to access token
+    let tokenInfo: GoogleTokenInfo;
+    
+    if (idToken) {
+      tokenInfo = await this.googleTokenService.verifyIdToken(idToken);
+    } else if (accessToken) {
+      // Fallback to access token verification
+      tokenInfo = await this.googleTokenService.verifyAccessToken(accessToken);
+    } else {
+      throw new BadRequestException('ID token or access token is required for Google OAuth');
+    }
+
+    let firstName: string | undefined;
+    let lastName: string | undefined;
+    if (name) {
+      const nameParts = name.split(' ');
+      firstName = nameParts[0];
+      lastName = nameParts.slice(1).join(' ') || undefined;
+    }
+
+    // Always fetch fresh profile picture from Google API to ensure valid URL
+    // The picture from idToken/accessToken might be expired or invalid
+    let avatarUrl: string | null = null;
+    if (accessToken) {
+      avatarUrl = await this.googleTokenService.fetchProfilePicture(accessToken);
+    }
+    // If fetch failed, try using tokenInfo.picture as fallback
+    avatarUrl = avatarUrl || tokenInfo.picture || null;
+    
+    const profile = {
+      id: tokenInfo.sub,
+      emails: [{ value: tokenInfo.email, verified: tokenInfo.emailVerified }],
+      name: {
+        givenName: firstName || tokenInfo.givenName,
+        familyName: lastName || tokenInfo.familyName,
+      },
+      photos: avatarUrl ? [{ value: avatarUrl }] : undefined,
+    };
+
+    let user = await this.usersService.findByProvider(AuthProvider.GOOGLE, profile.id);
+    let isNewUser = false;
+
+    if (!user) {
+      const existingUser = await this.usersService.findByEmail(tokenInfo.email);
+      if (existingUser) {
+        user = await this.usersService.update(existingUser.id, {
+          provider: AuthProvider.GOOGLE,
+          providerId: profile.id,
+          isEmailVerified: tokenInfo.emailVerified,
+          avatar: profile.photos?.[0]?.value || existingUser.avatar,
+        });
+      } else {
+        user = await this.usersService.create({
+          email: tokenInfo.email,
+          provider: AuthProvider.GOOGLE,
+          providerId: profile.id,
+          firstName: profile.name?.givenName,
+          lastName: profile.name?.familyName,
+          avatar: profile.photos?.[0]?.value,
+          isEmailVerified: tokenInfo.emailVerified,
+        });
+        isNewUser = true;
+      }
+    } else {
+      await this.usersService.update(user.id, {
+        firstName: profile.name?.givenName || user.firstName,
+        lastName: profile.name?.familyName || user.lastName,
+        avatar: profile.photos?.[0]?.value || user.avatar,
+        isEmailVerified: tokenInfo.emailVerified,
+      });
+      user = await this.usersService.findById(user.id);
+    }
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User account is inactive');
+    }
+
+    await this.usersService.updateLastLogin(user.id!);
+
+    const response = await this.generateTokens(user!);
+    return { response, isNewUser };
+  }
 
     async loginWithApple(profile: {
         id: string;
@@ -300,5 +391,38 @@ export class AuthService {
     private calculateExpirationDate(expiresIn: string): Date {
         const seconds = this.parseExpiresIn(expiresIn);
         return new Date(Date.now() + seconds * 1000);
+    }
+
+    /**
+     * Get the current user's profile from the database.
+     * This ensures we get fresh data including the avatar from OAuth providers.
+     */
+    async getProfile(userId: string): Promise<{
+        id: string;
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+        avatar: string | null;
+        provider: AuthProvider;
+        role: string;
+        isEmailVerified: boolean;
+        createdAt: Date;
+    }> {
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            avatar: user.avatar,
+            provider: user.provider,
+            role: user.role,
+            isEmailVerified: user.isEmailVerified,
+            createdAt: user.createdAt,
+        };
     }
 }
