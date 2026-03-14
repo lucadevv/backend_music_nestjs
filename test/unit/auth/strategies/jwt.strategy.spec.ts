@@ -56,9 +56,15 @@ describe('JwtStrategy', () => {
 
       expect(usersService.findById).toHaveBeenCalledWith(mockJwtPayload.sub);
       expect(result).toEqual({
-        userId: mockJwtPayload.sub,
-        email: mockJwtPayload.email,
-        role: mockJwtPayload.role,
+        userId: mockUser.id,
+        email: mockUser.email,
+        role: mockUser.role,
+        firstName: mockUser.firstName,
+        lastName: mockUser.lastName,
+        avatar: mockUser.avatar,
+        provider: mockUser.provider,
+        isEmailVerified: mockUser.isEmailVerified,
+        createdAt: mockUser.createdAt,
       });
     });
 

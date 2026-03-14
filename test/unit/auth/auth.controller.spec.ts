@@ -220,6 +220,8 @@ describe('AuthController', () => {
 
       const result = await controller.getProfile(mockUserPayload);
 
+      expect(authService.getProfile).toHaveBeenCalledWith(mockUserId);
+
       expect(result).toEqual({
         userId: mockUserId,
         email: mockUserEmail,

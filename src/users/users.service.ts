@@ -77,12 +77,14 @@ export class UsersService {
     }
 
     // Update only the provided settings
-    if (settings.language !== undefined) user.language = settings.language;
-    if (settings.streamingQuality !== undefined) user.streamingQuality = settings.streamingQuality;
-    if (settings.downloadQuality !== undefined) user.downloadQuality = settings.downloadQuality;
-    if (settings.autoPlay !== undefined) user.autoPlay = settings.autoPlay;
-    if (settings.showLyrics !== undefined) user.showLyrics = settings.showLyrics;
-    if (settings.equalizerPreset !== undefined) user.equalizerPreset = settings.equalizerPreset;
+    Object.assign(user, {
+      language: settings.language ?? user.language,
+      streamingQuality: settings.streamingQuality ?? user.streamingQuality,
+      downloadQuality: settings.downloadQuality ?? user.downloadQuality,
+      autoPlay: settings.autoPlay ?? user.autoPlay,
+      showLyrics: settings.showLyrics ?? user.showLyrics,
+      equalizerPreset: settings.equalizerPreset ?? user.equalizerPreset,
+    });
 
     await this.userRepository.save(user);
 

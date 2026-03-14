@@ -112,88 +112,86 @@ export class MusicApiService {
 
       return response.data;
     } catch (error: any) {
+      this.handleRequestError(error, endpoint);
+      throw error; // Just in case handleRequestError does not throw (though it always should)
+    }
+  }
 
-      this.logger.error(`Error calling ${this.baseUrl}${endpoint}`, {
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        status: error.response?.status,
-        timeout: error.code === 'ECONNABORTED',
-      });
+  private handleRequestError(error: any, endpoint: string): never {
+    this.logger.error(`Error calling ${this.baseUrl}${endpoint}`, {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+      status: error.response?.status,
+      timeout: error.code === 'ECONNABORTED',
+    });
 
-      if (error.response) {
+    if (error.response) {
+      const status = error.response.status;
+      const responseData = error.response.data;
 
-        const status = error.response.status;
-        const responseData = error.response.data;
+      let message = 'External service error';
+      if (responseData?.detail) {
+        message = responseData.detail;
+      } else if (responseData?.message) {
+        message = responseData.message;
+      } else if (responseData?.error) {
+        message = responseData.error;
+      }
 
+      const httpStatus = status >= 500 && status < 600
+        ? status
+        : HttpStatus.BAD_GATEWAY;
 
-        let message = 'External service error';
-        if (responseData?.detail) {
-          message = responseData.detail;
-        } else if (responseData?.message) {
-          message = responseData.message;
-        } else if (responseData?.error) {
-          message = responseData.error;
-        }
-
-
-
-        const httpStatus = status >= 500 && status < 600
-          ? status
-          : HttpStatus.BAD_GATEWAY;
-
+      throw new HttpException(
+        {
+          message,
+          statusCode: httpStatus,
+          endpoint: `${this.baseUrl}${endpoint}`,
+          details: responseData,
+        },
+        httpStatus,
+      );
+    } else if (error.request) {
+      if (error.code === 'ECONNABORTED') {
         throw new HttpException(
           {
-            message,
-            statusCode: httpStatus,
+            message: `Request timeout after ${this.timeout}ms`,
+            statusCode: HttpStatus.GATEWAY_TIMEOUT,
             endpoint: `${this.baseUrl}${endpoint}`,
-            details: responseData,
           },
-          httpStatus,
+          HttpStatus.GATEWAY_TIMEOUT,
         );
-      } else if (error.request) {
-
-        if (error.code === 'ECONNABORTED') {
-          throw new HttpException(
-            {
-              message: `Request timeout after ${this.timeout}ms`,
-              statusCode: HttpStatus.GATEWAY_TIMEOUT,
-              endpoint: `${this.baseUrl}${endpoint}`,
-            },
-            HttpStatus.GATEWAY_TIMEOUT,
-          );
-        } else if (error.code === 'ECONNREFUSED') {
-          throw new HttpException(
-            {
-              message: 'External music service is not available (connection refused)',
-              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-              endpoint: `${this.baseUrl}${endpoint}`,
-            },
-            HttpStatus.SERVICE_UNAVAILABLE,
-          );
-        } else {
-          throw new HttpException(
-            {
-              message: 'External music service is not available',
-              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-              endpoint: `${this.baseUrl}${endpoint}`,
-              error: error.code || error.message,
-            },
-            HttpStatus.SERVICE_UNAVAILABLE,
-          );
-        }
-      } else {
-
+      } else if (error.code === 'ECONNREFUSED') {
         throw new HttpException(
           {
-            message: 'Error connecting to external music service',
-            statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+            message: 'External music service is not available (connection refused)',
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
             endpoint: `${this.baseUrl}${endpoint}`,
-            error: error.message,
           },
-          HttpStatus.INTERNAL_SERVER_ERROR,
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      } else {
+        throw new HttpException(
+          {
+            message: 'External music service is not available',
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            endpoint: `${this.baseUrl}${endpoint}`,
+            error: error.code || error.message,
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
         );
       }
+    } else {
+      throw new HttpException(
+        {
+          message: 'Error connecting to external music service',
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          endpoint: `${this.baseUrl}${endpoint}`,
+          error: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 

@@ -250,13 +250,12 @@ export class MusicController {
   @ApiResponse({ status: 502, description: 'Error del servicio externo' })
   async getForYouContent(@CurrentUser() user: any) {
     try {
-      const [favoriteSongs, favoritePlaylists, favoriteGenres] = await Promise.all([
+      const [favoriteSongs, favoritePlaylists, favoriteGenres, exploreContent] = await Promise.all([
         this.libraryService.getFavoriteSongs(user.userId, 1, 5),
         this.libraryService.getFavoritePlaylists(user.userId, 1, 5),
         this.libraryService.getFavoriteGenres(user.userId, 1, 5),
+        this.musicApiService.explore(),
       ]);
-
-      const exploreContent = await this.musicApiService.explore();
 
       const forYouMixes: Array<{ title: string; type: string; playlists: any[] }> = [];
 
@@ -297,43 +296,11 @@ export class MusicController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
   ) {
     try {
-      // Get recently listened songs from history
-      const { songs, total } = await this.listenHistoryService.getRecentlyListened(
+      return await this.listenHistoryService.getRecentlyListenedWithStreams(
         user.userId,
         limit,
         startIndex,
       );
-      
-      // Get videoIds to fetch stream URLs
-      const videoIds = songs
-        .map((s) => s.videoId)
-        .filter((v): v is string => !!v);
-      
-      // Fetch stream URLs for all songs
-      let streamUrlsMap: Record<string, string> = {};
-      if (videoIds.length > 0) {
-        try {
-          const streams = await this.musicApiService.getBatchStreamUrls(videoIds);
-          streams.results.forEach((s) => {
-            if (s.url) {
-              streamUrlsMap[s.videoId] = s.url;
-            }
-          });
-        } catch (e) {
-          // If stream fetch fails, continue without URLs
-        }
-      }
-      
-      // Add stream_url to each song
-      const songsWithStreams = songs.map((song) => ({
-        ...song,
-        stream_url: song.videoId ? streamUrlsMap[song.videoId] : undefined,
-      }));
-      
-      return {
-        songs: songsWithStreams,
-        total,
-      };
     } catch (error) {
       throw new HttpException('Failed to fetch recently listened', HttpStatus.BAD_GATEWAY);
     }

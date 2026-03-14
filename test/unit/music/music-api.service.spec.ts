@@ -264,7 +264,7 @@ describe('MusicApiService', () => {
 
       expect(result).toEqual(mockPlaylistResponse);
       expect(httpService.get).toHaveBeenCalledWith(
-        `${mockBaseUrl}/playlists/${mockExternalPlaylistId}?include_stream_urls=true`,
+        `${mockBaseUrl}/playlists/${mockExternalPlaylistId}?include_stream_urls=true&prefetch_count=10&start_index=0&limit=20`,
         { timeout: mockTimeout },
       );
     });
@@ -322,7 +322,7 @@ describe('MusicApiService', () => {
 
       expect(result).toEqual(mockSearchResponse);
       expect(httpService.get).toHaveBeenCalledWith(
-        `${mockBaseUrl}/search/?q=test%20query&filter=songs&include_stream_urls=true`,
+        `${mockBaseUrl}/search/?q=test%20query&filter=songs&include_stream_urls=true&start_index=0&limit=20`,
         { timeout: mockTimeout },
       );
     });
@@ -334,7 +334,7 @@ describe('MusicApiService', () => {
 
       expect(result).toEqual(mockSearchResponse);
       expect(httpService.get).toHaveBeenCalledWith(
-        `${mockBaseUrl}/search/?q=test%20query&filter=playlists&include_stream_urls=true`,
+        `${mockBaseUrl}/search/?q=test%20query&filter=playlists&include_stream_urls=true&start_index=0&limit=20`,
         { timeout: mockTimeout },
       );
     });
