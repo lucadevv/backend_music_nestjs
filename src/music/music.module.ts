@@ -7,9 +7,11 @@ import { Song } from './entities/song.entity';
 import { Playlist } from './entities/playlist.entity';
 import { Genre } from './entities/genre.entity';
 import { RecentSearch } from './entities/recent-search.entity';
+import { UserListenHistory } from './entities/user-listen-history.entity';
 import { MusicController } from './music.controller';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
+import { ListenHistoryService } from './services/listen-history.service';
 import { LibraryModule } from '../library/library.module';
 
 @Module({
@@ -28,11 +30,11 @@ import { LibraryModule } from '../library/library.module';
                 },
             }),
         }),
-        TypeOrmModule.forFeature([Song, Playlist, Genre, RecentSearch]),
+        TypeOrmModule.forFeature([Song, Playlist, Genre, RecentSearch, UserListenHistory]),
         LibraryModule,
     ],
     controllers: [MusicController],
-    providers: [MusicApiService, RecentSearchService],
-    exports: [MusicApiService, RecentSearchService],
+    providers: [MusicApiService, RecentSearchService, ListenHistoryService],
+    exports: [MusicApiService, RecentSearchService, ListenHistoryService],
 })
 export class MusicModule {}

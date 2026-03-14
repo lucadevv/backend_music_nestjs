@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { RecentSearch } from '../entities/recent-search.entity';
 
 @Injectable()
@@ -8,42 +8,75 @@ export class RecentSearchService {
   constructor(
     @InjectRepository(RecentSearch)
     private readonly recentSearchRepository: Repository<RecentSearch>,
+    private readonly dataSource: DataSource,
   ) {}
 
+  /**
+   * Guarda una búsqueda (solo la query, sin canción seleccionada)
+   * Se llama cuando el usuario realiza una búsqueda
+   */
   async saveSearch(
     userId: string,
     query: string,
     filter: string = 'songs',
-    videoId?: string,
-    songData?: any,
   ): Promise<RecentSearch> {
-    // Buscar si ya existe esta búsqueda para este usuario
-    const existing = await this.recentSearchRepository.findOne({
-      where: { userId, query },
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // Upsert atómico - incrementa contador y actualiza lastSearchedAt
+    // NO actualiza videoId/songData (eso se hace cuando el usuario selecciona)
+    await this.dataSource.query(
+      `INSERT INTO recent_searches ("userId", query, filter, "searchCount", "lastSearchedAt", "createdAt")
+       VALUES ($1, $2, $3, 1, NOW(), NOW())
+       ON CONFLICT ("userId", query) DO UPDATE SET
+         "searchCount" = recent_searches."searchCount" + 1,
+         "lastSearchedAt" = NOW(),
+         filter = EXCLUDED.filter`,
+      [userId, normalizedQuery, filter],
+    );
+
+    const savedSearch = await this.recentSearchRepository.findOne({
+      where: { userId, query: normalizedQuery },
     });
 
-    if (existing) {
-      // Actualizar contador, fecha, videoId y songData
-      existing.searchCount += 1;
-      existing.lastSearchedAt = new Date();
-      existing.filter = filter;
-      // Reemplazar videoId y songData con los nuevos de esta búsqueda específica
-      existing.videoId = videoId || null;
-      existing.songData = songData || null;
-      return this.recentSearchRepository.save(existing);
+    if (!savedSearch) {
+      throw new Error('Failed to save or retrieve recent search');
     }
 
-    // Crear nueva búsqueda
-    const recentSearch = this.recentSearchRepository.create({
-      userId,
-      query,
-      filter,
-      searchCount: 1,
-      videoId: videoId || null,
-      songData: songData || null,
+    return savedSearch;
+  }
+
+  /**
+   * Actualiza la canción seleccionada en una búsqueda reciente
+   * Se llama cuando el usuario toca una canción de los resultados
+   */
+  async updateSelectedSong(
+    userId: string,
+    query: string,
+    videoId: string,
+    songData: any,
+  ): Promise<RecentSearch> {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // Upsert atómico - actualiza videoId y songData
+    await this.dataSource.query(
+      `INSERT INTO recent_searches ("userId", query, filter, "videoId", "songData", "searchCount", "lastSearchedAt", "createdAt")
+       VALUES ($1, $2, 'songs', $3, $4, 1, NOW(), NOW())
+       ON CONFLICT ("userId", query) DO UPDATE SET
+         "videoId" = EXCLUDED."videoId",
+         "songData" = EXCLUDED."songData",
+         "lastSearchedAt" = NOW()`,
+      [userId, normalizedQuery, videoId, JSON.stringify(songData)],
+    );
+
+    const savedSearch = await this.recentSearchRepository.findOne({
+      where: { userId, query: normalizedQuery },
     });
 
-    return this.recentSearchRepository.save(recentSearch);
+    if (!savedSearch) {
+      throw new Error('Failed to update or retrieve recent search');
+    }
+
+    return savedSearch;
   }
 
   async getRecentSearches(

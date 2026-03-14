@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { RecentSearchService } from '../../../src/music/services/recent-search.service';
 import { RecentSearch } from '../../../src/music/entities/recent-search.entity';
 import {
@@ -13,6 +13,7 @@ import {
 describe('RecentSearchService', () => {
   let service: RecentSearchService;
   let repository: jest.Mocked<Repository<RecentSearch>>;
+  let dataSource: jest.Mocked<DataSource>;
 
   const mockRepository = {
     findOne: jest.fn(),
@@ -23,6 +24,10 @@ describe('RecentSearchService', () => {
     delete: jest.fn(),
   };
 
+  const mockDataSource = {
+    query: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -31,11 +36,16 @@ describe('RecentSearchService', () => {
           provide: getRepositoryToken(RecentSearch),
           useValue: mockRepository,
         },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
       ],
     }).compile();
 
     service = module.get<RecentSearchService>(RecentSearchService);
     repository = module.get(getRepositoryToken(RecentSearch));
+    dataSource = module.get(DataSource);
   });
 
   afterEach(() => {
@@ -46,110 +56,71 @@ describe('RecentSearchService', () => {
   // saveSearch
   // =====================
   describe('saveSearch', () => {
-    it('should create new search when not exists', async () => {
-      const query = 'new search';
+    it('should create new search with normalized (lowercase) query', async () => {
+      const query = 'NEW SEARCH';
+      const normalizedQuery = 'new search';
       const filter = 'songs';
-      const songData = { title: 'Test Song', artist: 'Test Artist' };
 
-      mockRepository.findOne.mockResolvedValue(null);
-      mockRepository.create.mockReturnValue({
-        userId: mockUserId,
-        query,
-        filter,
-        searchCount: 1,
-        videoId: mockVideoId,
-        songData,
-      } as RecentSearch);
-      mockRepository.save.mockResolvedValue({
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
         id: 'new-search-id',
         userId: mockUserId,
-        query,
+        query: normalizedQuery,
         filter,
         searchCount: 1,
-        videoId: mockVideoId,
-        songData,
+        videoId: null,
+        songData: null,
         createdAt: new Date(),
         lastSearchedAt: new Date(),
       } as RecentSearch);
 
-      const result = await service.saveSearch(mockUserId, query, filter, mockVideoId, songData);
+      const result = await service.saveSearch(mockUserId, query, filter);
 
-      expect(mockRepository.findOne).toHaveBeenCalledWith({
-        where: { userId: mockUserId, query },
-      });
-      expect(mockRepository.create).toHaveBeenCalledWith({
-        userId: mockUserId,
-        query,
-        filter,
-        searchCount: 1,
-        videoId: mockVideoId,
-        songData,
-      });
-      expect(result.query).toBe(query);
+      // Verificar que se normalizó la query a lowercase
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, normalizedQuery]),
+      );
+      expect(result.query).toBe(normalizedQuery);
     });
 
-    it('should update existing search when found', async () => {
-      const query = 'existing search';
-      const existingSearch: RecentSearch = {
-        ...mockRecentSearch,
-        query,
-        searchCount: 3,
-      };
+    it('should normalize query with trim and lowercase', async () => {
+      const query = '  BAD BUNNY  ';
+      const normalizedQuery = 'bad bunny';
 
-      mockRepository.findOne.mockResolvedValue(existingSearch);
-      mockRepository.save.mockResolvedValue({
-        ...existingSearch,
-        searchCount: 4,
-        lastSearchedAt: new Date(),
-        filter: 'playlists',
-        videoId: 'new-video-id',
-        songData: { title: 'New Song' },
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRecentSearch,
+        query: normalizedQuery,
       } as RecentSearch);
 
-      const result = await service.saveSearch(
-        mockUserId,
-        query,
-        'playlists',
-        'new-video-id',
-        { title: 'New Song' },
-      );
+      await service.saveSearch(mockUserId, query);
 
-      expect(mockRepository.findOne).toHaveBeenCalledWith({
-        where: { userId: mockUserId, query },
-      });
-      expect(mockRepository.save).toHaveBeenCalled();
-      expect(result.searchCount).toBe(4);
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, normalizedQuery]),
+      );
     });
 
-    it('should update videoId and songData on existing search', async () => {
+    it('should use upsert for atomic operation', async () => {
       const query = 'test query';
-      const existingSearch: RecentSearch = {
-        ...mockRecentSearch,
-        query,
-        videoId: 'old-video-id',
-        songData: { title: 'Old Song' },
-      };
+      const normalizedQuery = 'test query';
 
-      const newSongData = { title: 'New Song', artist: 'New Artist' };
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue(mockRecentSearch as RecentSearch);
 
-      mockRepository.findOne.mockResolvedValue(existingSearch);
-      mockRepository.save.mockImplementation(async (search) => search);
+      await service.saveSearch(mockUserId, query);
 
-      const result = await service.saveSearch(
-        mockUserId,
-        query,
-        'songs',
-        'new-video-id',
-        newSongData,
+      // Verificar que se llamó a dataSource.query con el raw SQL de upsert
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT'),
+        expect.arrayContaining([mockUserId, normalizedQuery]),
       );
-
-      expect(result.videoId).toBe('new-video-id');
-      expect(result.songData).toEqual(newSongData);
     });
 
-    it('should handle null videoId and songData', async () => {
-      mockRepository.findOne.mockResolvedValue(null);
-      mockRepository.create.mockReturnValue({
+    it('should NOT save videoId and songData (saved only when user selects)', async () => {
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
         userId: mockUserId,
         query: 'test',
         filter: 'songs',
@@ -157,24 +128,110 @@ describe('RecentSearchService', () => {
         videoId: null,
         songData: null,
       } as RecentSearch);
-      mockRepository.save.mockImplementation(async (search) => search);
 
       const result = await service.saveSearch(mockUserId, 'test', 'songs');
 
+      // saveSearch solo guarda la query, no videoId/songData
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, 'test', 'songs']),
+      );
       expect(result.videoId).toBeNull();
       expect(result.songData).toBeNull();
     });
 
     it('should use default filter when not provided', async () => {
-      mockRepository.findOne.mockResolvedValue(null);
-      mockRepository.create.mockImplementation((data) => data as RecentSearch);
-      mockRepository.save.mockImplementation(async (search) => search);
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue(mockRecentSearch as RecentSearch);
 
       await service.saveSearch(mockUserId, 'test query');
 
-      expect(mockRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ filter: 'songs' }),
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, 'test query', 'songs']),
       );
+    });
+  });
+
+  // =====================
+  // updateSelectedSong
+  // =====================
+  describe('updateSelectedSong', () => {
+    it('should update videoId and songData for existing search', async () => {
+      const query = 'bad bunny';
+      const normalizedQuery = 'bad bunny';
+      const songData = { title: 'Tití Me Preguntó', artist: 'Bad Bunny' };
+
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRecentSearch,
+        query: normalizedQuery,
+        videoId: mockVideoId,
+        songData,
+      } as RecentSearch);
+
+      const result = await service.updateSelectedSong(
+        mockUserId,
+        query,
+        mockVideoId,
+        songData,
+      );
+
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, normalizedQuery, mockVideoId]),
+      );
+      expect(result.videoId).toBe(mockVideoId);
+      expect(result.songData).toEqual(songData);
+    });
+
+    it('should normalize query when updating selected song', async () => {
+      const query = '  BAD BUNNY  ';
+      const normalizedQuery = 'bad bunny';
+      const songData = { title: 'Test Song' };
+
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRecentSearch,
+        query: normalizedQuery,
+      } as RecentSearch);
+
+      await service.updateSelectedSong(mockUserId, query, mockVideoId, songData);
+
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([mockUserId, normalizedQuery, mockVideoId]),
+      );
+    });
+
+    it('should create search if not exists (upsert)', async () => {
+      const query = 'new search';
+      const songData = { title: 'New Song' };
+
+      mockDataSource.query.mockResolvedValue(undefined);
+      mockRepository.findOne.mockResolvedValue({
+        id: 'new-id',
+        userId: mockUserId,
+        query,
+        filter: 'songs',
+        videoId: mockVideoId,
+        songData,
+        createdAt: new Date(),
+        lastSearchedAt: new Date(),
+      } as RecentSearch);
+
+      const result = await service.updateSelectedSong(
+        mockUserId,
+        query,
+        mockVideoId,
+        songData,
+      );
+
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT'),
+        expect.arrayContaining([mockUserId, query, mockVideoId]),
+      );
+      expect(result.videoId).toBe(mockVideoId);
     });
   });
 
@@ -191,21 +248,23 @@ describe('RecentSearchService', () => {
       expect(mockRepository.find).toHaveBeenCalledWith({
         where: { userId: mockUserId },
         order: { lastSearchedAt: 'DESC' },
+        skip: 0,
         take: 10,
       });
       expect(result).toEqual(searches);
     });
 
-    it('should return recent searches with custom limit', async () => {
+    it('should return recent searches with custom startIndex and limit', async () => {
       const searches = [mockRecentSearch];
       mockRepository.find.mockResolvedValue(searches);
 
-      const result = await service.getRecentSearches(mockUserId, 5);
+      const result = await service.getRecentSearches(mockUserId, 5, 15);
 
       expect(mockRepository.find).toHaveBeenCalledWith({
         where: { userId: mockUserId },
         order: { lastSearchedAt: 'DESC' },
-        take: 5,
+        skip: 5,
+        take: 15,
       });
       expect(result).toEqual(searches);
     });
@@ -226,11 +285,12 @@ describe('RecentSearchService', () => {
       ];
       mockRepository.find.mockResolvedValue(searches);
 
-      const result = await service.getRecentSearches(mockUserId, 20);
+      const result = await service.getRecentSearches(mockUserId, 0, 20);
 
       expect(mockRepository.find).toHaveBeenCalledWith(
         expect.objectContaining({
           order: { lastSearchedAt: 'DESC' },
+          skip: 0,
           take: 20,
         }),
       );

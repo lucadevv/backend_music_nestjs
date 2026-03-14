@@ -23,6 +23,7 @@ import { RecentSearch } from './music/entities/recent-search.entity';
 import { FavoriteSong } from './library/entities/favorite-song.entity';
 import { FavoritePlaylist } from './library/entities/favorite-playlist.entity';
 import { FavoriteGenre } from './library/entities/favorite-genre.entity';
+import { UserListenHistory } from './music/entities/user-listen-history.entity';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { MusicModule } from './music/music.module';
@@ -105,6 +106,7 @@ import { SharedModule } from './shared/shared.module';
           FavoriteSong,
           FavoritePlaylist,
           FavoriteGenre,
+          UserListenHistory,
         ],
         synchronize: configService.get<string>('app.environment') === 'development',
         logging: configService.get<string>('app.environment') === 'development',

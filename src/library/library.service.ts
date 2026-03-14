@@ -57,7 +57,7 @@ export class LibraryService {
     userId: string,
     songId?: string,
     videoId?: string,
-    metadata?: { title?: string; artist?: string; thumbnail?: string; duration?: number },
+    metadata?: { title?: string; artist?: string; thumbnail?: string; duration?: number; streamUrl?: string },
   ): Promise<FavoriteSong> {
     if (!songId && !videoId) {
       throw new BadRequestException('Either songId or videoId must be provided');
@@ -77,6 +77,7 @@ export class LibraryService {
           artist: metadata?.artist || 'Unknown',
           thumbnail: metadata?.thumbnail || null,
           duration: metadata?.duration || 0,
+          audioUrl: metadata?.streamUrl || null,
         });
         song = await this.songRepository.save(song);
       } else if (metadata && (metadata.title || metadata.artist || metadata.thumbnail || metadata.duration)) {
@@ -86,6 +87,7 @@ export class LibraryService {
           artist: metadata.artist || song.artist,
           thumbnail: metadata.thumbnail || song.thumbnail,
           duration: metadata.duration || song.duration,
+          audioUrl: metadata.streamUrl || song.audioUrl,
         });
         song = await this.songRepository.findOne({ where: { id: song.id } });
       }
@@ -368,10 +370,11 @@ export class LibraryService {
     const favorite = this.favoriteGenreRepository.create({ userId, genreId });
     const saved = await this.favoriteGenreRepository.save(favorite);
 
-    return this.favoriteGenreRepository.findOne({
-      where: { id: saved.id },
-      relations: ['genre'],
-    }) as Promise<FavoriteGenre>;
+    return this.favoriteGenreRepository
+      .createQueryBuilder('fg')
+      .leftJoinAndSelect('fg.genre', 'g')
+      .where('fg.id = :id', { id: saved.id })
+      .getOne() as Promise<FavoriteGenre>;
   }
 
   async removeFavoriteGenre(userId: string, genreId: string): Promise<void> {
@@ -391,13 +394,14 @@ export class LibraryService {
     page: number = 1,
     limit: number = 20,
   ): Promise<{ data: FavoriteGenre[]; total: number }> {
-    const [data, total] = await this.favoriteGenreRepository.findAndCount({
-      where: { userId },
-      relations: ['genre'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const [data, total] = await this.favoriteGenreRepository
+      .createQueryBuilder('fg')
+      .leftJoinAndSelect('fg.genre', 'g')
+      .where('fg.userId = :userId', { userId })
+      .orderBy('fg.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
     return { data, total };
   }

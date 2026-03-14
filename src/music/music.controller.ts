@@ -1,11 +1,14 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
   Query,
   HttpException,
   HttpStatus,
   Delete,
+  Put,
+  Body,
   DefaultValuePipe,
   ParseIntPipe,
 } from '@nestjs/common';
@@ -16,9 +19,11 @@ import {
   ApiParam,
   ApiQuery,
   ApiBearerAuth,
+  ApiBody,
 } from '@nestjs/swagger';
 import { MusicApiService } from './services/music-api.service';
 import { RecentSearchService } from './services/recent-search.service';
+import { ListenHistoryService } from './services/listen-history.service';
 import { LibraryService } from '../library/library.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -33,6 +38,7 @@ export class MusicController {
     private readonly musicApiService: MusicApiService,
     private readonly recentSearchService: RecentSearchService,
     private readonly libraryService: LibraryService,
+    private readonly listenHistoryService: ListenHistoryService,
   ) {}
 
   @Get('explore')
@@ -149,21 +155,50 @@ export class MusicController {
     }
 
     try {
+      // Guardar la búsqueda (solo la query, sin canción seleccionada)
+      // La canción se actualiza cuando el usuario selecciona una (ver updateSelectedSong)
+      await this.recentSearchService.saveSearch(user.userId, query, filter);
+
       const results = await this.musicApiService.search(query, filter, startIndex, limit);
-
-      const firstSong = results.results && results.results.length > 0
-        ? results.results.find((item) => item.videoId && item.videoId.trim() !== '')
-        : undefined;
-
-      const videoId = firstSong?.videoId;
-      const songData = firstSong || null;
-
-      await this.recentSearchService.saveSearch(user.userId, query, filter, videoId, songData);
-
       return results;
     } catch (error) {
       throw new HttpException('Failed to search music', HttpStatus.BAD_GATEWAY);
     }
+  }
+
+  @Put('recent-searches/select')
+  @ApiOperation({ summary: 'Actualizar la canción seleccionada en una búsqueda reciente' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Término de búsqueda original' },
+        videoId: { type: 'string', description: 'ID del video seleccionado' },
+        songData: { type: 'object', description: 'Datos de la canción seleccionada' },
+      },
+      required: ['query', 'videoId', 'songData'],
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Canción seleccionada actualizada' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  async updateSelectedSong(
+    @CurrentUser() user: any,
+    @Body() body: { query: string; videoId: string; songData: any },
+  ) {
+    const result = await this.recentSearchService.updateSelectedSong(
+      user.userId,
+      body.query,
+      body.videoId,
+      body.songData,
+    );
+    return {
+      message: 'Selected song updated successfully',
+      search: {
+        id: result.id,
+        query: result.query,
+        videoId: result.videoId,
+      },
+    };
   }
 
   @Get('recent-searches')
@@ -262,12 +297,14 @@ export class MusicController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
   ) {
     try {
-      // Calculate page from start_index
-      const page = Math.floor(startIndex / limit) + 1;
-      const favoriteSongs = await this.libraryService.getFavoriteSongs(user.userId, page, limit);
+      // Get recently listened songs from history
+      const { songs, total } = await this.listenHistoryService.getRecentlyListened(
+        user.userId,
+        limit,
+        startIndex,
+      );
       
       // Get videoIds to fetch stream URLs
-      const songs = favoriteSongs.data.map((fav) => fav.song);
       const videoIds = songs
         .map((s) => s.videoId)
         .filter((v): v is string => !!v);
@@ -291,15 +328,55 @@ export class MusicController {
       const songsWithStreams = songs.map((song) => ({
         ...song,
         stream_url: song.videoId ? streamUrlsMap[song.videoId] : undefined,
-        addedAt: favoriteSongs.data.find((f) => f.song.id === song.id)?.createdAt,
       }));
       
       return {
         songs: songsWithStreams,
-        total: favoriteSongs.total,
+        total,
       };
     } catch (error) {
       throw new HttpException('Failed to fetch recently listened', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  @Post('record-listen')
+  @ApiOperation({ summary: 'Registrar una reproducción en el historial' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        videoId: { type: 'string', description: 'Video ID de YouTube' },
+      },
+      required: ['videoId'],
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Reproducción registrada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Solicitud inválida' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  async recordListen(
+    @CurrentUser() user: any,
+    @Body() body: { videoId: string },
+  ) {
+    try {
+      const { videoId } = body;
+      
+      if (!videoId) {
+        throw new HttpException('videoId is required', HttpStatus.BAD_REQUEST);
+      }
+
+      const result = await this.listenHistoryService.recordListen(user.userId, videoId);
+      
+      if (!result) {
+        return { success: false, message: 'Invalid videoId' };
+      }
+      
+      return { success: true, message: 'Listen recorded successfully' };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('recordListen error:', error);
+      throw new HttpException('Failed to record listen', HttpStatus.BAD_GATEWAY);
     }
   }
 

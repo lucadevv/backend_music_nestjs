@@ -7,6 +7,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -23,6 +24,8 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { OAuthRequestDto } from './dto/oauth-request.dto';
+import { OAuthResponseDto } from './dto/oauth-response.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -80,6 +83,39 @@ export class AuthController {
   @ApiExcludeEndpoint()
   async googleAuthCallback(@Req() req: Request) {
     return req.user;
+  }
+
+  @Public()
+  @Post('oauth/google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Google OAuth mobile login' })
+  @ApiBody({ type: OAuthRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Google OAuth login successful',
+    type: OAuthResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid Google token' })
+  async googleOAuthLogin(@Body() oauthDto: OAuthRequestDto) {
+    if (oauthDto.provider !== 'google') {
+      throw new BadRequestException('Invalid OAuth provider');
+    }
+
+    if (!oauthDto.idToken && !oauthDto.accessToken) {
+      throw new BadRequestException('ID token or access token is required for Google OAuth');
+    }
+
+    const { response, isNewUser } = await this.authService.loginWithGoogleMobile(
+      oauthDto.idToken,
+      oauthDto.accessToken,
+      oauthDto.email,
+      oauthDto.name,
+    );
+
+    return {
+      ...response,
+      isNewUser,
+    };
   }
 
   @Public()
@@ -150,16 +186,6 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   async getProfile(@CurrentUser() user: any) {
-    return {
-      id: user.userId,
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-      avatar: user.avatar ?? null,
-      provider: user.provider ?? 'email',
-      role: user.role,
-      isEmailVerified: user.isEmailVerified ?? false,
-      createdAt: user.createdAt,
-    };
+    return this.authService.getProfile(user.userId);
   }
 }

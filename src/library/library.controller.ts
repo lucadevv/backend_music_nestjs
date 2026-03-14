@@ -58,11 +58,12 @@ export class LibraryController {
       user.userId,
       dto.songId,
       dto.videoId,
-      dto.title || dto.artist || dto.thumbnail ? {
+      dto.title || dto.artist || dto.thumbnail || dto.streamUrl ? {
         title: dto.title,
         artist: dto.artist,
         thumbnail: dto.thumbnail,
         duration: dto.duration,
+        streamUrl: dto.streamUrl,
       } : undefined,
     );
   }
@@ -139,9 +140,12 @@ export class LibraryController {
     
     // Add stream_url to each song
     const songsWithStreams = result.data.map((fav) => ({
-      ...fav.song,
-      stream_url: fav.song.videoId ? streamUrlsMap[fav.song.videoId] : undefined,
-      addedAt: fav.createdAt,
+      id: fav.id,
+      song: {
+        ...fav.song,
+        streamUrl: fav.song.videoId ? streamUrlsMap[fav.song.videoId] : undefined,
+      },
+      createdAt: fav.createdAt,
     }));
     
     return {

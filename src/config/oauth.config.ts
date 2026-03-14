@@ -3,6 +3,8 @@ import { registerAs } from '@nestjs/config';
 export const oauthConfig = registerAs('oauth', () => ({
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientIdAndroid: process.env.GOOGLE_CLIENT_ID_ANDROID || '',
+    clientIdIos: process.env.GOOGLE_CLIENT_ID_IOS || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback',
   },

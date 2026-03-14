@@ -52,4 +52,13 @@ export class AddFavoriteSongDto {
   @IsOptional()
   @IsNumber()
   duration?: number;
+
+  @ApiPropertyOptional({
+    description: 'URL del stream de audio',
+    example: 'https://example.com/audio.mp3',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  streamUrl?: string;
 }

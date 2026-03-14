@@ -40,10 +40,14 @@ export class HttpCacheInterceptor implements NestInterceptor {
     const cachedResponse = await this.cacheManager.get(cacheKey);
     
     if (cachedResponse) {
+      const cached = cachedResponse as any;
+      console.log(`[CACHE HIT] ${url} - returning cached response with ${cached.songs?.length || 0} songs`);
       // Devolver cache inmediatamente, luego actualizar en background
       // Esto da la sensación de instantáneo al usuario
       this.refreshCacheInBackground(cacheKey, next, url);
       return of(cachedResponse);
+    } else {
+      console.log(`[CACHE MISS] ${url} - fetching fresh data`);
     }
 
     // Si no está en caché, ejecutar la petición
@@ -60,17 +64,16 @@ export class HttpCacheInterceptor implements NestInterceptor {
   }
 
   private async refreshCacheInBackground(cacheKey: string, next: CallHandler, url: string) {
-    // Solo actualizar en background para contenido no crítico
-    if (!url.includes('/for-you') && !url.includes('/recently-listened')) {
-      const ttl = this.getTtl(url);
-      next.handle().pipe(
-        tap(async (response) => {
-          await this.cacheManager.set(cacheKey, response, ttl);
-        }),
-      ).subscribe({
-        error: () => {} // Silenciar errores de refresh
-      });
-    }
+    // Siempre actualizar en background para mantener cache fresco
+    // Incluyendo contenido personalizado como /recently-listened y /for-you
+    const ttl = this.getTtl(url);
+    next.handle().pipe(
+      tap(async (response) => {
+        await this.cacheManager.set(cacheKey, response, ttl);
+      }),
+    ).subscribe({
+      error: () => {} // Silenciar errores de refresh
+    });
   }
 
   private handleCacheError(error: any): Observable<any> {
